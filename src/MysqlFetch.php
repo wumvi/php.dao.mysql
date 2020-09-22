@@ -5,9 +5,6 @@ namespace Wumvi\MysqlDao;
 
 class MysqlFetch
 {
-    public const DEFAULT_SELECT_MOD = '*';
-    public const UNLIMIT = -1;
-
     private DbManager $dbManager;
     private bool $isDebug;
     private int $affectedRows = 0;
@@ -18,11 +15,23 @@ class MysqlFetch
         $this->isDebug = $isDebug;
     }
 
+    /**
+     * Возвращает количество затронутых записей
+     *
+     * @return int
+     */
     public function getAffectedRows(): int
     {
         return $this->affectedRows;
     }
 
+    /**
+     * Возвращает последний вставленный ключ
+     *
+     * @return int
+     *
+     * @throws DbException
+     */
     public function getLastInsertId(): int
     {
         return $this->dbManager->getConnection()->insert_id;
@@ -43,32 +52,27 @@ class MysqlFetch
         }
     }
 
-    public function call(string $sql, array $vars = [], bool $fetchFirst = false): array
+    private function fetchSimpleQuery(\mysqli $mysql, string $sql, bool $fetchFirst): array
     {
-        $orderVars = [];
-        $sql = preg_replace_callback('/:(?<name>[\w_]+)/', function ($matches) use (&$orderVars, $vars) {
-            $varName = $matches['name'];
-            $orderVars[] = $vars[$varName];
-            return '?';
-        }, $sql);
-
-        $mysql = $this->dbManager->getConnection();
-
-        if (empty($orderVars)) {
-            $result = $mysql->query($sql);
-            if ($mysql->error) {
-                $error = $mysql->error . ' ' . $mysql->errno;
-                self::triggerError($error, $sql, $orderVars, $this->isDebug);
-                throw new DbException('error-to-prepare-' . $sql);
-            }
-
-            if (is_bool($result)) {
-                return [];
-            }
-
-            return $fetchFirst ? $result->fetch_assoc() : $result->fetch_all(MYSQLI_ASSOC);
+        $result = $mysql->query($sql);
+        if ($mysql->error) {
+            $error = $mysql->error . ' ' . $mysql->errno;
+            self::triggerError($error, $sql, [], $this->isDebug);
+            throw new DbException('error-to-prepare-' . $sql);
         }
 
+        if (is_bool($result)) {
+            return [];
+        }
+
+        $data = $fetchFirst ? $result->fetch_assoc() : $result->fetch_all(MYSQLI_ASSOC);
+        $this->closeResult($mysql);
+
+        return $data;
+    }
+
+    private function fetchPrepareQuery(\mysqli $mysql, string $sql, array $orderVars, bool $fetchFirst)
+    {
         $types = '';
         foreach ($orderVars as $var) {
             $types .= $this->makeTypes($var);
@@ -103,7 +107,27 @@ class MysqlFetch
         $result = $fetchFirst ? $result->fetch_assoc() : $result->fetch_all(MYSQLI_ASSOC);
         $stmt->close();
 
+        $this->closeResult($mysql);
+
         return $result;
+    }
+
+    public function call(string $sql, array $vars = [], bool $fetchFirst = false): array
+    {
+        $orderVars = [];
+        $sql = preg_replace_callback('/:(?<name>[\w_]+)/', function ($matches) use (&$orderVars, $vars) {
+            $varName = $matches['name'];
+            $orderVars[] = $vars[$varName];
+            return '?';
+        }, $sql);
+
+        $mysql = $this->dbManager->getConnection();
+
+        if (empty($orderVars)) {
+            return $this->fetchSimpleQuery($mysql, $sql, $fetchFirst);
+        }
+
+        return $this->fetchPrepareQuery($mysql, $sql, $orderVars, $fetchFirst);
     }
 
     /**
@@ -122,6 +146,16 @@ class MysqlFetch
                 var_export($vars, true)
             );
             trigger_error($msg);
+        }
+    }
+
+    private function closeResult($mysql)
+    {
+        if ($mysql->more_results()) {
+            do {
+                $mysql->next_result();
+                $mysql->more_results();
+            } while ($mysql->more_results());
         }
     }
 }

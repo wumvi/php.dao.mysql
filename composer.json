@@ -1,0 +1,28 @@
+{
+  "name": "wumvi/mysqldao",
+  "authors": [
+    {
+      "name": "Vitaliy Kozlenko",
+      "email": "vk@wumvi.com"
+    }
+  ],
+  "require": {
+    "ext-mysqli": "*"
+  },
+  "require-dev": {
+  },
+  "autoload": {
+    "psr-4": {
+      "Wumvi\\MysqlDao\\": "src"
+    }
+  },
+  "scripts": {
+  },
+  "license": "proprietary",
+  "archive": {
+    "exclude": [
+      "README.md",
+      "dev"
+    ]
+  }
+}

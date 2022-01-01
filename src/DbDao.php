@@ -3,9 +3,6 @@ declare(strict_types=1);
 
 namespace Wumvi\MysqlDao;
 
-/**
- * @codeCoverageIgnore
- */
 class DbDao
 {
     protected MysqlFetch $db;

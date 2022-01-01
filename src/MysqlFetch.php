@@ -112,7 +112,7 @@ class MysqlFetch
         return $result;
     }
 
-    public function call(string $sql, array $vars = [], bool $fetchFirst = false): array
+    public function call(string $sql, array $vars = [], bool $fetchFirst = false): array|false|null
     {
         $orderVars = [];
         $sql = preg_replace_callback('/:(?<name>[\w_]+)/', function ($matches) use (&$orderVars, $vars) {

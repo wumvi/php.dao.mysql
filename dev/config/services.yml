@@ -1,0 +1,13 @@
+parameters:
+
+services:
+  _defaults:
+    autowire: false
+    autoconfigure: false
+
+  Wumvi\Dao\Mysql\BaseDao:
+    public: true
+    class: Wumvi\Dao\Mysql\BaseDao
+    arguments:
+      - master1: 'mysql://root:123@192.168.1.96:3311/test'
+        master2: 'mysql://root:123@192.168.1.96:3311/test'

@@ -1,5 +1,5 @@
 {
-  "name": "wumvi/mysqldao",
+  "name": "wumvi/php.dao.mysql",
   "authors": [
     {
       "name": "Vitaliy Kozlenko",
@@ -10,13 +10,18 @@
     "ext-mysqli": "*"
   },
   "require-dev": {
+    "wumvi/php.di": "^v1.0.12",
+    "phpunit/phpunit": "10.5.3"
   },
   "autoload": {
     "psr-4": {
-      "Wumvi\\MysqlDao\\": "src"
+      "Wumvi\\Dao\\Mysql\\": "src"
     }
   },
   "scripts": {
+    "phpunit": [
+      "XDEBUG_MODE=coverage phpunit"
+    ]
   },
   "license": "proprietary",
   "archive": {

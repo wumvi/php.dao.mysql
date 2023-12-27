@@ -2,7 +2,8 @@
 
 use PHPUnit\Framework\TestCase;
 use Wumvi\Dao\Mysql\BaseDao;
-use Wumvi\Dao\Mysql\DbException;
+use Wumvi\Dao\Mysql\Consts;
+use Wumvi\Dao\Mysql\Exception\DbException;
 
 class DaoCommonTest extends TestCase
 {
@@ -45,7 +46,7 @@ class DaoCommonTest extends TestCase
 
     public function testConnectionNotFound(): void
     {
-        $this->expectExceptionMessage(DbException::CONNECTION_IS_EMPTY);
+        $this->expectExceptionMessage(Consts::CONNECTION_IS_EMPTY_MSG);
         $baseDao = new BaseDao([], []);
         $baseDao->call('select CURRENT_USER() as user', [], true, 'run')->fetchOne();
         $baseDao->close();
@@ -73,13 +74,14 @@ class DaoCommonTest extends TestCase
         $baseDao = new BaseDao([
             'master' => 'mysql://root:123@mysqltest:3311/test',
         ]);
-        $baseDao->call('truncate table table_for_insert');
+        $table = 'table_for_insert';
+        $baseDao->call('truncate table ' . $table);
         $baseDao->insert('table_for_insert', [
             'id1' => [1, 2],
             'id2' => ['ff', 'ddd']
         ]);
 
-        $data = $baseDao->call('select * from table_for_insert')->fetchOne();
+        $data = $baseDao->call('select * from ' . $table)->fetchOne();
         $this->assertIsArray($data, 'is array');
         $this->assertArrayHasKey('id1', $data);
         $this->assertArrayHasKey('id2', $data);

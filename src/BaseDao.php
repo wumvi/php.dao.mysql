@@ -3,6 +3,10 @@ declare(strict_types=1);
 
 namespace Wumvi\Dao\Mysql;
 
+use Wumvi\Dao\Mysql\Exception\DbException;
+use Wumvi\Dao\Mysql\Exception\DuplicateRowDbException;
+use Wumvi\Dao\Mysql\Exception\UnknownDbException;
+
 class BaseDao
 {
     private string $requestId;
@@ -58,7 +62,11 @@ class BaseDao
 
         $count = count($this->masters);
         if ($count === 0) {
-            throw new DbException(DbException::CONNECTION_IS_EMPTY);
+            throw new DbException(
+                'Master or slave connection is empty',
+                Consts::CONNECTION_IS_EMPTY_MSG,
+                Consts::CONNECTION_IS_EMPTY_CODE
+            );
         }
         return $this->getReadyConnection($this->masters);
     }
@@ -90,11 +98,13 @@ class BaseDao
             $mysql->query($sql);
             return $mysql->insert_id;
         } catch (\mysqli_sql_exception $ex) {
-            $msg = sprintf('Error execute sql "%s". Msg "%s".', $sql, $ex->getMessage());
+            $text = sprintf('Error execute sql "%s". Msg "%s".', $sql, $ex->getMessage());
             if (stripos($ex->getMessage(), 'duplicate') !== false) {
-                throw new DuplicateRowDbException($msg);
+                throw new DuplicateRowDbException($text, Consts::DUPLICATE_MSG, $ex->getCode(), $ex);
             }
-            throw new DbException($msg);
+            throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
+        } catch (\Throwable $ex) {
+            throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
         }
     }
 
@@ -139,13 +149,13 @@ class BaseDao
                 $result = $stmt->get_result();
             }
         } catch (\mysqli_sql_exception $ex) {
-            $msg = sprintf('Error execute sql "%s". Msg "%s".', $sql, $ex->getMessage());
+            $text = sprintf('Error execute sql "%s". Msg "%s".', $sql, $ex->getMessage());
             if (stripos($ex->getMessage(), 'duplicate') !== false) {
-                throw new DuplicateRowDbException($msg);
+                throw new DuplicateRowDbException($text, Consts::DUPLICATE_MSG, $ex->getCode(), $ex);
             }
-            throw new DbException($msg);
+            throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
         } catch (\Throwable $ex) {
-            throw new DbException($ex->getMessage());
+            throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
         }
 
         return new Fetch($result, $mysql);

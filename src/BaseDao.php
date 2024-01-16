@@ -3,7 +3,9 @@ declare(strict_types=1);
 
 namespace Wumvi\Dao\Mysql;
 
+use PHPUnit\Event\Runtime\PHP;
 use Wumvi\Dao\Mysql\Exception\DbException;
+use Wumvi\Dao\Mysql\Exception\DeadlockException;
 use Wumvi\Dao\Mysql\Exception\DuplicateRowDbException;
 use Wumvi\Dao\Mysql\Exception\UnknownDbException;
 
@@ -77,6 +79,13 @@ class BaseDao
         return $con->getMysqlConnection();
     }
 
+    public function getThreadId(bool $isSlave)
+    {
+        $con = $this->getConnection($isSlave);
+
+        return $con->getThreadId();
+    }
+
     public function insert(string $table, array $data): int
     {
         $conn = $this->getConnection(false);
@@ -115,6 +124,7 @@ class BaseDao
         string $sql,
         array $params = [],
         bool $isSlave = false,
+        int $mode = MYSQLI_STORE_RESULT,
         string $function = ''
     ): Fetch {
         $conn = $this->getConnection($isSlave);
@@ -139,23 +149,41 @@ class BaseDao
             }
         }
 
-        try {
-            if (empty($params)) {
-                $result = $mysql->query($sql);
-            } else {
-                $stmt = $mysql->prepare($sql);
-                $stmt->bind_param($types, ...$binds);
-                $stmt->execute();
-                $result = $stmt->get_result();
+        $deadlockEx = null;
+        $deadlockTryCount = $conn->getDeadLockTryCount();
+        for ($deadlockIndex = 0; $deadlockIndex < $deadlockTryCount; $deadlockIndex++) {
+            try {
+                if (empty($params)) {
+                    $result = $mysql->query($sql, $mode);
+                } else {
+                    $stmt = $mysql->prepare($sql);
+                    $stmt->bind_param($types, ...$binds);
+                    $stmt->execute();
+                    $result = $stmt->get_result();
+                }
+            } catch (\mysqli_sql_exception $ex) {
+                $text = sprintf(Consts::ERROR_MSG, $sql, $ex->getMessage());
+                if ($ex->getCode() === 1062) {
+                    throw new DuplicateRowDbException($text, Consts::DUPLICATE_MSG, $ex->getCode(), $ex);
+                }
+
+                if ($ex->getCode() === 1213) {
+                    $deadlockEx = $ex;
+                    continue;
+                }
+
+                throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
+            } catch (\Throwable $ex) {
+                throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
             }
-        } catch (\mysqli_sql_exception $ex) {
-            $text = sprintf('Error execute sql "%s". Msg "%s".', $sql, $ex->getMessage());
-            if (stripos($ex->getMessage(), 'duplicate') !== false) {
-                throw new DuplicateRowDbException($text, Consts::DUPLICATE_MSG, $ex->getCode(), $ex);
-            }
-            throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
-        } catch (\Throwable $ex) {
-            throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
+
+            $deadlockEx = null;
+            break;
+        }
+
+        if ($deadlockEx !== null) {
+            $text = sprintf(Consts::ERROR_MSG, $sql, $deadlockEx->getMessage());
+            throw new DeadlockException($text, $deadlockEx->getMessage(), $deadlockEx->getCode(), $deadlockEx);
         }
 
         return new Fetch($result, $mysql);

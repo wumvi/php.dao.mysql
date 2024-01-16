@@ -3,17 +3,25 @@ declare(strict_types=1);
 
 namespace Wumvi\Dao\Mysql;
 
+use Wumvi\Dao\Mysql\Exception\DbConnectException;
+
 class Connection
 {
     private string $dbName;
     private string $user;
     private string $password;
     private string $hostname;
-    private int $port;
+    private readonly int $port;
 
     private \mysqli|null $mysql = null;
 
-    public int $threadId = -1;
+    private int $threadId;
+
+    private bool $isAutocommit = false;
+
+    private ?string $socket = null;
+    private int $flag = 0;
+    private int $deadLockTryCount = Consts::DEADLOCK_TRY_COUNT;
 
     public function __construct(string $name, string $dbConnect)
     {
@@ -27,16 +35,27 @@ class Connection
             throw new \Exception('Not found "host" in dbconnect');
         }
 
-        $this->dbName = trim($raw['path'], ' /');
-        $this->user = $raw['user'];
-        $this->password = $raw['pass'];
-        $this->hostname = $raw['host'];
-        $this->port = $raw['port'];
+        if (isset($raw['query'])) {
+            parse_str($raw['query'], $query);
+            $this->isAutocommit = ($query['autocommit'] ?? '0') === '1';
+            $this->socket = $query['socket'] ?? null;
+            $this->flag = isset($query['flag']) ? (int)$query['flag'] : 0;
+            $deadlockTryCount = (int)($query['deadlock-try-count'] ?? Consts::DEADLOCK_TRY_COUNT);
+            $this->deadLockTryCount = max($deadlockTryCount, Consts::DEADLOCK_TRY_COUNT);
+        }
+
+        $this->dbName = trim($raw['path'] ?? 'main', ' /');
+        $this->user = $raw['user'] ?? 'root';
+        $this->password = $raw['pass'] ?? 'pwd';
+        $this->hostname = $raw['host'] ?? '127.0.0.1';
+        $this->port = $raw['port'] ?? 3306;
+
+        $this->threadId = -1;
     }
 
-    public function isCreated()
+    public function getDeadLockTryCount(): int
     {
-        return $this->mysql !== null;
+        return $this->deadLockTryCount;
     }
 
     public function getThreadId(): int
@@ -44,21 +63,39 @@ class Connection
         return $this->threadId;
     }
 
+    public function isCreated()
+    {
+        return $this->mysql !== null;
+    }
+
     public function getMysqlConnection(): \mysqli
     {
         if ($this->mysql === null) {
-            $this->mysql = new \mysqli($this->hostname, $this->user, $this->password, $this->dbName, $this->port);
-            if ($this->mysql->connect_errno) {
+            $this->mysql = mysqli_init();
+
+            if (!$this->isAutocommit && !$this->mysql->options(MYSQLI_INIT_COMMAND, 'SET AUTOCOMMIT = 0')) {
+                throw new DbConnectException('Setting MYSQLI_INIT_COMMAND failed');
+            }
+            $status = $this->mysql->real_connect(
+                $this->hostname,
+                $this->user,
+                $this->password,
+                $this->dbName,
+                $this->port,
+                $this->socket,
+                $this->flag
+            );
+            if (!$status) {
                 $this->mysql = null;
                 $msg = sprintf(
-                    'Error to connect to mysql server %s@%s:%s:%s:%s',
+                    Consts::ERROR_CONNECT_MSG,
                     $this->user,
                     $this->hostname,
                     $this->port,
                     $this->mysql->connect_errno,
                     $this->mysql->connect_error
                 );
-                throw new \Exception($msg);
+                throw new DbConnectException($msg);
             }
 
             $this->threadId = $this->mysql->thread_id;

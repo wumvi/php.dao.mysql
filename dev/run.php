@@ -7,37 +7,31 @@ include __DIR__ . '/../vendor/autoload.php';
 use Wumvi\DI\Builder;
 
 $di = Builder::makeDi(__DIR__, true, '/config/services.yml');
-/** @var BaseDao $baseDao */
-$baseDao = $di->get(BaseDao::class);
+///** @var BaseDao $baseDao */
+//$baseDao = $di->get(BaseDao::class);
 
-// $mysql = new \mysqli('192.168.1.96', 'root', '123', 'test', 3311);
+$baseDao1 = new BaseDao([
+    'master' => 'mysql://root:123@p:mysqltest:3311/test?autocommit=0&flag=2048',
+]);
 
-
-//var_dump($baseDao->call('select 1')->fetchOne());
-
-//$url = 'mysql://root:123@192.168.1.96:3311/test';
-//$baseDao = new BaseDao([$url]);
-
-//$data = $mysqlFetch->call('select :data as data, :name as name', ['name' => 1, 'data' => 2,]);
-//var_dump($data);
-
-//$data = $mysqlFetch->call('select 1 name', [], true);
-//var_dump($data);
-
-//$mysqlFetch->call('call add_recall_record(:url, :method, :data)', [
-//   'url' => 'ya.ru',
-//   'method' => 'GET',
-//   'data' => '1233',
+//$baseDao2 = new BaseDao([
+//    'master' => 'mysql://root:123@mysqltest:3311/test',
 //]);
 
-//$data = $baseDao->call('select 1');
-//var_dump($data->fetchOne());
-// $baseDao->call('call add_recall_record("sfsdf", "POST", "sdfsd")');
+//$baseDao1->call('call create_dead_lock_1()', [], false, MYSQLI_ASYNC);
+//var_dump($baseDao1->getThreadId(false));
+//
+//$baseDao2->call('call create_dead_lock_2()');
+//var_dump($baseDao2->getThreadId(false));
 
-$baseDao = new BaseDao([
-    'master' => 'mysql://root:123@mysqltest:3311/test',
-]);
-$baseDao->insert('table_for_insert', [
-    'id1' => [1, 2],
-    'id2' => ['ff', 'ddd']
-]);
+//$data = $baseDao1->call('select @@transaction_ISOLATION;')->fetchOne();
+//var_dump($data);
+
+//$data = $baseDao1->call('SHOW VARIABLES WHERE Variable_name="autocommit"')->fetchOne();
+//var_dump($data);
+
+//$data = $baseDao1->call('SHOW SESSION STATUS LIKE "Ssl_cipher"')->fetchOne();
+//var_dump($data);
+
+// $baseDao1->call('call test_duplicate()');
+

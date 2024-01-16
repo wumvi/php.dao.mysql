@@ -8,10 +8,6 @@ services:
     ports:
       - '3311:3306'
     volumes:
-      - php-dao-mysql-db:/var/lib/mysql
+      - ./workdir/db/:/var/lib/mysql
     environment:
       - MYSQL_ROOT_PASSWORD=123
-
-volumes:
-  php-dao-mysql-db:
-    external: true

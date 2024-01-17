@@ -23,13 +23,13 @@ class BaseDao
         string $requestId = ''
     ) {
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
+        $this->requestId = $requestId;
         foreach ($masters as $name => $uri) {
             $this->masters[] = new Connection($name, $uri);
         }
         foreach ($slaves as $name => $uri) {
             $this->slaves[] = new Connection($name, $uri);
         }
-        $this->requestId = $requestId;
     }
 
     public function close()
@@ -82,14 +82,12 @@ class BaseDao
     public function getThreadId(bool $isSlave)
     {
         $con = $this->getConnection($isSlave);
-
         return $con->getThreadId();
     }
 
     public function insert(string $table, array $data): int
     {
-        $conn = $this->getConnection(false);
-        $mysql = $conn->getMysqlConnection();
+        $mysql = $this->getMysql(false);
 
         $keys = array_keys($data);
         $fields = '`' . implode('`,`', $keys) . '`';
@@ -116,6 +114,46 @@ class BaseDao
             throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
         }
     }
+
+//    public function callAsync(
+//        string $sql,
+//        array $params = [],
+//        bool $isSlave = false,
+//        int $mode = MYSQLI_STORE_RESULT,
+//        string $function = ''
+//    ) {
+//        $mysql = $this->getMysql($isSlave);
+//        $sql = preg_replace_callback('/:[\w_]+/', function ($matches) use ($params, $mysql) {
+//            $name = $matches[0];
+//            $value = $params[substr($name, 1)] ?? '';
+//            if (is_null($value)) {
+//                return '\'null\'';
+//            }
+//
+//            if (is_string($value)) {
+//                return '\'' . $mysql->escape_string($value) . '\'';
+//            }
+//
+//            if (is_bool($value)) {
+//                return $value ? '1' : '0';
+//            }
+//
+//            if ($value instanceof \DateTime) {
+//                return '\'' . $value->format('Y-m-d H:i:s') . '\'';
+//            }
+//
+//            if (is_array($value)) {
+//                return '\'' . json_encode($value) . '\'';
+//            }
+//
+//            return $value;
+//        }, $sql);
+//
+//        $result = $mysql->query($sql, $mode | MYSQLI_ASYNC);
+//        if ($result === false) {
+//            throw new UnknownDbException('result is false', Consts::UNKNOWN_MSG);
+//        }
+//    }
 
     /**
      * @throws DbException
@@ -149,6 +187,7 @@ class BaseDao
             }
         }
 
+        $result = false;
         $deadlockEx = null;
         $deadlockTryCount = $conn->getDeadLockTryCount();
         for ($deadlockIndex = 0; $deadlockIndex < $deadlockTryCount; $deadlockIndex++) {
@@ -186,6 +225,15 @@ class BaseDao
             throw new DeadlockException($text, $deadlockEx->getMessage(), $deadlockEx->getCode(), $deadlockEx);
         }
 
+        if ($result === false) {
+            throw new UnknownDbException('result is false', Consts::UNKNOWN_MSG);
+        }
+
         return new Fetch($result, $mysql);
+    }
+
+    public function ping(bool $isSlave): bool
+    {
+        return $this->getMysql($isSlave)->ping();
     }
 }

@@ -5,13 +5,18 @@ namespace Wumvi\Dao\Mysql;
 
 class Fetch
 {
-    private \mysqli_result|bool $stmt;
+    private \mysqli_result $stmt;
     private \mysqli $mysql;
 
-    public function __construct($stmt, \mysqli $mysql)
+    public function __construct(\mysqli_result $stmt, \mysqli $mysql)
     {
         $this->stmt = $stmt;
         $this->mysql = $mysql;
+    }
+
+    public function getAffectedRows(): int
+    {
+        return $this->mysql->affected_rows;
     }
 
     public function fetchAll(): array
@@ -46,5 +51,6 @@ class Fetch
             $this->mysql->next_result();
             $this->mysql->more_results();
         } while ($this->mysql->more_results());
+        $this->stmt->free();
     }
 }

@@ -35,3 +35,10 @@ $baseDao1 = new BaseDao([
 
 // $baseDao1->call('call test_duplicate()');
 
+//$baseDao1->callAsync('select :name, :ddd', ['name' => '111', 'ddd' => 433], false);
+//$baseDao1->callAsync('select :name, :ddd', ['name' => '111', 'ddd' => 433], false);
+
+var_dump($baseDao1->call('select :name p, :ddd m', ['name' => '111', 'ddd' => 433], false)->fetchAll());
+var_dump($baseDao1->call('select :name p, :ddd m', ['name' => '111', 'ddd' => 433], false)->fetchAll());
+
+

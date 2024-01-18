@@ -7,7 +7,7 @@ class Utils
 {
     public static function convert($value, \mysqli $mysql): string
     {
-        if ($value === null) {
+        if (is_null($value)) {
             return 'null';
         }
 
@@ -15,7 +15,19 @@ class Utils
             return '\'' . $mysql->escape_string($value) . '\'';
         }
 
+        if (is_bool($value)) {
+            return $value ? '1' : '0';
+        }
+
+        if ($value instanceof \DateTime) {
+            return '\'' . $value->format('Y-m-d H:i:s') . '\'';
+        }
+
+        if (is_array($value)) {
+            return '\'' . json_encode($value) . '\'';
+        }
 
         return $value . '';
     }
 }
+

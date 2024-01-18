@@ -9,6 +9,3 @@ docker run -ti \
     dfuhbu/php8.3.1-cli:1 \
     bash
 ```
-
-
-Commands out of sync; you can't run this command now in /data/src/BaseDao.php on line 164

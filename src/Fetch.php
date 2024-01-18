@@ -28,10 +28,6 @@ class Fetch
         $data = $this->stmt->fetch_all(MYSQLI_ASSOC);
         $this->stmt->free();
 
-//        if ($this->mysql->more_results()) {
-//            $this->closeResult();
-//        }
-
         return $data;
     }
 
@@ -43,17 +39,7 @@ class Fetch
 
         $data = $this->stmt->fetch_assoc() ?: [];
         $this->stmt->free();
-        // $this->closeResult();
 
         return $data;
     }
-
-//    private function closeResult(): void
-//    {
-//        do {
-//            $this->mysql->next_result();
-//            $this->mysql->more_results();
-//        } while ($this->mysql->more_results());
-//        $this->stmt->free();
-//    }
 }

@@ -138,46 +138,6 @@ class BaseDao
         }
     }
 
-//    public function callAsync(
-//        string $sql,
-//        array $params = [],
-//        bool $isSlave = false,
-//        int $mode = MYSQLI_STORE_RESULT,
-//        string $function = ''
-//    ) {
-//        $mysql = $this->getMysql($isSlave);
-//        $sql = preg_replace_callback('/:[\w_]+/', function ($matches) use ($params, $mysql) {
-//            $name = $matches[0];
-//            $value = $params[substr($name, 1)] ?? '';
-//            if (is_null($value)) {
-//                return '\'null\'';
-//            }
-//
-//            if (is_string($value)) {
-//                return '\'' . $mysql->escape_string($value) . '\'';
-//            }
-//
-//            if (is_bool($value)) {
-//                return $value ? '1' : '0';
-//            }
-//
-//            if ($value instanceof \DateTime) {
-//                return '\'' . $value->format('Y-m-d H:i:s') . '\'';
-//            }
-//
-//            if (is_array($value)) {
-//                return '\'' . json_encode($value) . '\'';
-//            }
-//
-//            return $value;
-//        }, $sql);
-//
-//        $result = $mysql->query($sql, $mode | MYSQLI_ASYNC);
-//        if ($result === false) {
-//            throw new UnknownDbException('result is false', Consts::UNKNOWN_MSG);
-//        }
-//    }
-
     /**
      * @throws DbException
      */

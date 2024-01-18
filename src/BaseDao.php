@@ -90,7 +90,7 @@ class BaseDao
      * @return int
      * @throws DbException
      */
-    public function getThreadId(bool $isSlave)
+    public function getThreadId(bool $isSlave): int
     {
         $con = $this->getConnection($isSlave);
         return $con->getThreadId();
@@ -127,10 +127,11 @@ class BaseDao
             $mysql->query($sql);
             return $mysql->insert_id;
         } catch (\mysqli_sql_exception $ex) {
-            $text = sprintf('Error execute sql "%s". Msg "%s".', $sql, $ex->getMessage());
-            if (stripos($ex->getMessage(), 'duplicate') !== false) {
+            $text = sprintf(Consts::ERROR_MSG, $sql, $ex->getMessage());
+            if ($ex->getCode() === 1062) {
                 throw new DuplicateRowDbException($text, Consts::DUPLICATE_MSG, $ex->getCode(), $ex);
             }
+
             throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
         } catch (\Throwable $ex) {
             throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
@@ -264,5 +265,10 @@ class BaseDao
     public function ping(bool $isSlave): bool
     {
         return $this->getMysql($isSlave)->ping();
+    }
+
+    public function escapeString(bool $isSlave, string $data): string
+    {
+        return $this->getMysql($isSlave)->real_escape_string($data);
     }
 }

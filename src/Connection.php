@@ -63,10 +63,10 @@ class Connection
         return $this->threadId;
     }
 
-    public function isCreated()
-    {
-        return $this->mysql !== null;
-    }
+//    public function isCreated()
+//    {
+//        return $this->mysql !== null;
+//    }
 
     public function getMysqlConnection(): \mysqli
     {
@@ -114,10 +114,5 @@ class Connection
         } catch (\Throwable $ex) {
 
         }
-    }
-
-    public function escapeString(string $data)
-    {
-        return $this->mysql->real_escape_string($data);
     }
 }

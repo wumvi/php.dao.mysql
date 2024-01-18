@@ -11,7 +11,7 @@ $di = Builder::makeDi(__DIR__, true, '/config/services.yml');
 //$baseDao = $di->get(BaseDao::class);
 
 $baseDao1 = new BaseDao([
-    'master' => 'mysql://root:123@p:mysqltest:3311/test?autocommit=0&flag=2048',
+    'master' => 'mysql://root:123@p:mysqltest:3311/test?autocommit=0&flag=32',
 ]);
 
 //$baseDao2 = new BaseDao([
@@ -38,7 +38,13 @@ $baseDao1 = new BaseDao([
 //$baseDao1->callAsync('select :name, :ddd', ['name' => '111', 'ddd' => 433], false);
 //$baseDao1->callAsync('select :name, :ddd', ['name' => '111', 'ddd' => 433], false);
 
-var_dump($baseDao1->call('select :name p, :ddd m', ['name' => '111', 'ddd' => 433], false)->fetchAll());
-var_dump($baseDao1->call('select :name p, :ddd m', ['name' => '111', 'ddd' => 433], false)->fetchAll());
+//var_dump($baseDao1->call('select :name p, :ddd m', ['name' => '111', 'ddd' => 433], false)->fetchAll());
+//var_dump($baseDao1->call('select :name p, :ddd m', ['name' => '111', 'ddd' => 433], false)->fetchAll());
+
+var_dump($baseDao1->call('call test_sleep()', [], false, 0, 'main2')->fetchAll());
+var_dump($baseDao1->call('call test_sleep()', [], false, 0, 'main2')->fetchAll());
+
+//var_dump($baseDao1->call('select 1 union select 2', [], false, 0, 'main2')->fetchAll());
+//var_dump($baseDao1->call('select 1 union select 2', [], false, 0, 'main2')->fetchAll());
 
 

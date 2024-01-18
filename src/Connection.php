@@ -28,11 +28,11 @@ class Connection
         $raw = parse_url($dbConnect);
 
         if ($raw === false) {
-            throw new \Exception('Wrong dbconnect');
+            throw new DbConnectException('Wrong dbconnect');
         }
 
         if (!array_key_exists('host', $raw)) {
-            throw new \Exception('Not found "host" in dbconnect');
+            throw new DbConnectException('Not found "host" in dbconnect');
         }
 
         if (isset($raw['query'])) {

@@ -5,10 +5,10 @@ namespace Wumvi\Dao\Mysql;
 
 class Fetch
 {
-    private \mysqli_result $stmt;
+    private \mysqli_result|true $stmt;
     private \mysqli $mysql;
 
-    public function __construct(\mysqli_result $stmt, \mysqli $mysql)
+    public function __construct(\mysqli_result|true $stmt, \mysqli $mysql)
     {
         $this->stmt = $stmt;
         $this->mysql = $mysql;
@@ -26,6 +26,8 @@ class Fetch
         }
 
         $data = $this->stmt->fetch_all(MYSQLI_ASSOC);
+        $this->stmt->free();
+
         if ($this->mysql->more_results()) {
             $this->closeResult();
         }
@@ -40,7 +42,8 @@ class Fetch
         }
 
         $data = $this->stmt->fetch_assoc() ?: [];
-        $this->closeResult();
+        $this->stmt->free();
+        // $this->closeResult();
 
         return $data;
     }

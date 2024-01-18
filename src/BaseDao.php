@@ -3,63 +3,61 @@ declare(strict_types=1);
 
 namespace Wumvi\Dao\Mysql;
 
-use PHPUnit\Event\Runtime\PHP;
 use Wumvi\Dao\Mysql\Exception\DbException;
 use Wumvi\Dao\Mysql\Exception\DeadlockException;
 use Wumvi\Dao\Mysql\Exception\DuplicateRowDbException;
 use Wumvi\Dao\Mysql\Exception\UnknownDbException;
+use Wumvi\Dao\Mysql\Exception\DbConnectException;
 
 class BaseDao
 {
-    private string $requestId;
-    /** @var Connection[] */
-    private array $masters = [];
-    /** @var Connection[] */
-    private array $slaves = [];
+    private ?Connection $master = null;
+    private ?Connection $slave = null;
 
     public function __construct(
-        array $masters = [],
-        array $slaves = [],
-        string $requestId = ''
+        private readonly array $masters = [],
+        private readonly array $slaves = [],
+        private readonly string $requestId = ''
     ) {
         mysqli_report(MYSQLI_REPORT_ERROR | MYSQLI_REPORT_STRICT);
-        $this->requestId = $requestId;
-        foreach ($masters as $name => $uri) {
-            $this->masters[] = new Connection($name, $uri);
-        }
-        foreach ($slaves as $name => $uri) {
-            $this->slaves[] = new Connection($name, $uri);
-        }
     }
 
-    public function close()
+    public function close(): void
     {
-        array_map(fn($con) => $con->close(), $this->masters);
-        array_map(fn($con) => $con->close(), $this->slaves);
+        $this->master?->close();
+        $this->slave?->close();
     }
 
-    private function getReadyConnection(array $conn): Connection
+    private function getReadyConnection(array $conn): array
     {
         $count = count($conn);
-        if ($count === 1) {
-            return $conn[0];
-        }
+        $keys = array_keys($conn);
+        $key = $keys[mt_rand(0, $count - 1)];
 
-        foreach ($conn as $con) {
-            if ($con->isCreated()) {
-                return $con;
-            }
-        }
-
-        return $conn[mt_rand(0, $count - 1)];
+        return [$key, $conn[$key]];
     }
 
-
+    /**
+     * @param bool $isSlave
+     * @return Connection
+     *
+     * @throws DbException
+     */
     private function getConnection(bool $isSlave): Connection
     {
+        if ($isSlave && $this->slave !== null) {
+            return $this->slave;
+        }
+
+        if ($this->master !== null) {
+            return $this->master;
+        }
+
         $count = count($this->slaves);
         if ($isSlave && $count > 0) {
-            return $this->getReadyConnection($this->slaves);
+            list($name, $url) = $this->getReadyConnection($this->slaves);
+            $this->slave = new Connection($name, $url);
+            return $this->slave;
         }
 
         $count = count($this->masters);
@@ -70,22 +68,45 @@ class BaseDao
                 Consts::CONNECTION_IS_EMPTY_CODE
             );
         }
-        return $this->getReadyConnection($this->masters);
+        list($name, $url) = $this->getReadyConnection($this->masters);
+        $this->master = new Connection($name, $url);
+        return $this->master;
     }
 
+    /**
+     * @param bool $isSlave
+     * @return \mysqli
+     * @throws DbException
+     * @throws DbConnectException
+     */
     public function getMysql(bool $isSlave): \mysqli
     {
         $con = $this->getConnection($isSlave);
         return $con->getMysqlConnection();
     }
 
+    /**
+     * @param bool $isSlave
+     * @return int
+     * @throws DbException
+     */
     public function getThreadId(bool $isSlave)
     {
         $con = $this->getConnection($isSlave);
         return $con->getThreadId();
     }
 
-    public function insert(string $table, array $data): int
+    /**
+     * @param string $table
+     * @param array $data
+     * @param string $function
+     * @return int
+     * @throws DbConnectException
+     * @throws DbException
+     * @throws DuplicateRowDbException
+     * @throws UnknownDbException
+     */
+    public function insert(string $table, array $data, string $function = ''): int
     {
         $mysql = $this->getMysql(false);
 
@@ -101,6 +122,7 @@ class BaseDao
             $sql .= ' (' . implode(',', $values) . '),';
         }
         $sql = substr($sql, 0, strlen($sql) - 1);
+        $sql .= ' # ' . $function . ' ' . $this->requestId;
         try {
             $mysql->query($sql);
             return $mysql->insert_id;
@@ -187,6 +209,7 @@ class BaseDao
             }
         }
 
+        $sql .= ' # ' . $function . ' ' . $this->requestId;
         $result = false;
         $deadlockEx = null;
         $deadlockTryCount = $conn->getDeadLockTryCount();
@@ -232,6 +255,12 @@ class BaseDao
         return new Fetch($result, $mysql);
     }
 
+    /**
+     * @param bool $isSlave
+     * @return bool
+     * @throws DbConnectException
+     * @throws DbException
+     */
     public function ping(bool $isSlave): bool
     {
         return $this->getMysql($isSlave)->ping();

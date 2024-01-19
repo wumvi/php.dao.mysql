@@ -43,7 +43,7 @@ class BaseDao
      *
      * @throws DbException
      */
-    private function getConnection(bool $isSlave): Connection
+    private function getConnection(bool $isSlave = Consts::DEFAULT_SLAVE): Connection
     {
         if ($isSlave && $this->slave !== null) {
             return $this->slave;
@@ -79,10 +79,15 @@ class BaseDao
      * @throws DbException
      * @throws DbConnectException
      */
-    public function getMysql(bool $isSlave): \mysqli
+    public function getMysql(bool $isSlave = Consts::DEFAULT_SLAVE): \mysqli
     {
         $con = $this->getConnection($isSlave);
         return $con->getMysqlConnection();
+    }
+
+    public function __destruct()
+    {
+        $this->close();
     }
 
     /**
@@ -90,10 +95,16 @@ class BaseDao
      * @return int
      * @throws DbException
      */
-    public function getThreadId(bool $isSlave): int
+    public function getThreadId(bool $isSlave = Consts::DEFAULT_SLAVE): int
     {
         $con = $this->getConnection($isSlave);
         return $con->getThreadId();
+    }
+
+    public function isConnected(bool $isSlave = Consts::DEFAULT_SLAVE): bool
+    {
+        $con = $this->getConnection($isSlave);
+        return $con->getThreadId() !== Consts::THREAD_ID;
     }
 
     /**
@@ -138,15 +149,32 @@ class BaseDao
         }
     }
 
+    public function connect(bool $isSlave = Consts::DEFAULT_SLAVE): bool
+    {
+        $conn = $this->getConnection($isSlave);
+        return $conn->getMysqlConnection() !== null;
+    }
+
+    public function commit(bool $isSlave = Consts::DEFAULT_SLAVE)
+    {
+        $conn = $this->getConnection($isSlave);
+        $mysql = $conn->getMysqlConnection();
+        try {
+            $mysql->query('commit');
+        } catch (\mysqli_sql_exception $ex) {
+            throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
+        }
+    }
+
     /**
      * @throws DbException
      */
     public function call(
         string $sql,
         array $params = [],
-        bool $isSlave = false,
-        int $mode = MYSQLI_STORE_RESULT,
-        string $function = ''
+        bool $isSlave = Consts::DEFAULT_SLAVE,
+        string $function = '',
+        int $mode = MYSQLI_STORE_RESULT
     ): Fetch {
         $conn = $this->getConnection($isSlave);
         $mysql = $conn->getMysqlConnection();
@@ -222,12 +250,12 @@ class BaseDao
      * @throws DbConnectException
      * @throws DbException
      */
-    public function ping(bool $isSlave): bool
+    public function ping(bool $isSlave = Consts::DEFAULT_SLAVE): bool
     {
         return $this->getMysql($isSlave)->ping();
     }
 
-    public function escapeString(bool $isSlave, string $data): string
+    public function escapeString(string $data, bool $isSlave = Consts::DEFAULT_SLAVE): string
     {
         return $this->getMysql($isSlave)->real_escape_string($data);
     }

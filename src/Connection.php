@@ -15,7 +15,7 @@ class Connection
 
     private \mysqli|null $mysql = null;
 
-    private int $threadId;
+    private int $threadId = Consts::THREAD_ID;
 
     private bool $isAutocommit = false;
 
@@ -26,13 +26,8 @@ class Connection
     public function __construct(string $name, string $dbConnect)
     {
         $raw = parse_url($dbConnect);
-
-        if ($raw === false) {
-            throw new DbConnectException('Wrong dbconnect');
-        }
-
-        if (!array_key_exists('host', $raw)) {
-            throw new DbConnectException('Not found "host" in dbconnect');
+        if (!is_array($raw)) {
+            throw new DbConnectException('wrong-url-connect');
         }
 
         if (isset($raw['query'])) {
@@ -41,16 +36,14 @@ class Connection
             $this->socket = $query['socket'] ?? null;
             $this->flag = isset($query['flag']) ? (int)$query['flag'] : 0;
             $deadlockTryCount = (int)($query['deadlock-try-count'] ?? Consts::DEADLOCK_TRY_COUNT);
-            $this->deadLockTryCount = max($deadlockTryCount, Consts::DEADLOCK_TRY_COUNT);
+            $this->deadLockTryCount = max($deadlockTryCount, 1);
         }
 
         $this->dbName = trim($raw['path'] ?? 'main', ' /');
         $this->user = $raw['user'] ?? 'root';
         $this->password = $raw['pass'] ?? 'pwd';
         $this->hostname = $raw['host'] ?? '127.0.0.1';
-        $this->port = $raw['port'] ?? 3306;
-
-        $this->threadId = -1;
+        $this->port = $raw['port'] ?? Consts::DEFAULT_PORT;
     }
 
     public function getDeadLockTryCount(): int
@@ -63,11 +56,6 @@ class Connection
         return $this->threadId;
     }
 
-//    public function isCreated()
-//    {
-//        return $this->mysql !== null;
-//    }
-
     public function getMysqlConnection(): \mysqli
     {
         if ($this->mysql === null) {
@@ -76,18 +64,18 @@ class Connection
             if (!$this->isAutocommit && !$this->mysql->options(MYSQLI_INIT_COMMAND, 'SET AUTOCOMMIT = 0')) {
                 throw new DbConnectException('Setting MYSQLI_INIT_COMMAND failed');
             }
-            $status = $this->mysql->real_connect(
-                $this->hostname,
-                $this->user,
-                $this->password,
-                $this->dbName,
-                $this->port,
-                $this->socket,
-                $this->flag
-            );
-            if (!$status) {
-                $this->mysql = null;
-                $msg = sprintf(
+            try {
+                $this->mysql->real_connect(
+                    $this->hostname,
+                    $this->user,
+                    $this->password,
+                    $this->dbName,
+                    $this->port,
+                    $this->socket,
+                    $this->flag
+                );
+            } catch (\mysqli_sql_exception $ex) {
+                $text = sprintf(
                     Consts::ERROR_CONNECT_MSG,
                     $this->user,
                     $this->hostname,
@@ -95,9 +83,9 @@ class Connection
                     $this->mysql->connect_errno,
                     $this->mysql->connect_error
                 );
-                throw new DbConnectException($msg);
+                $this->mysql = null;
+                throw new DbConnectException($text, $ex->getMessage(), $ex->getCode(), $ex);
             }
-
             $this->threadId = $this->mysql->thread_id;
             register_shutdown_function(function () {
                 $this->close();

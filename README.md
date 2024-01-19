@@ -6,6 +6,6 @@ docker run -ti \
     --workdir /data/ \
     --network host \
     --add-host mysqltest:192.168.1.96 \
-    dfuhbu/php8.3.1-cli:1 \
+    dfuhbu/php8.3.1-cli-dev:1 \
     bash
 ```

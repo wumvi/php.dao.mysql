@@ -15,4 +15,9 @@ class Consts
     public const string ERROR_CONNECT_MSG = 'Error to connect to mysql server %s@%s:%s:%s:%s';
 
     public const int DEADLOCK_TRY_COUNT = 2;
+
+    public const int THREAD_ID = -1;
+    public const int DEFAULT_PORT = 3306;
+
+    public const bool DEFAULT_SLAVE = false;
 }

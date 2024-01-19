@@ -8,10 +8,17 @@ class Fetch
     private \mysqli_result|true $stmt;
     private \mysqli $mysql;
 
+    private bool $isClose = false;
+
     public function __construct(\mysqli_result|true $stmt, \mysqli $mysql)
     {
         $this->stmt = $stmt;
         $this->mysql = $mysql;
+    }
+
+    public function __destruct()
+    {
+        $this->free();
     }
 
     public function getAffectedRows(): int
@@ -26,9 +33,24 @@ class Fetch
         }
 
         $data = $this->stmt->fetch_all(MYSQLI_ASSOC);
-        $this->stmt->free();
+        $this->free();
 
         return $data;
+    }
+
+    public function getStmt(): \mysqli_result|true
+    {
+        return $this->stmt;
+    }
+
+    public function free(): void
+    {
+        if ($this->stmt === true || $this->isClose) {
+            return;
+        }
+
+        $this->stmt->free();
+        $this->isClose = true;
     }
 
     public function fetchOne(): array
@@ -38,7 +60,7 @@ class Fetch
         }
 
         $data = $this->stmt->fetch_assoc() ?: [];
-        $this->stmt->free();
+        $this->free();
 
         return $data;
     }

@@ -12,3 +12,6 @@ docker run -ti \
 
 
 SELECT @@server_id
+
+
+XDEBUG_MODE=coverage ./vendor/bin/phpunit --filter testDeadLockException phpunit/tests/ConnectionTest.php

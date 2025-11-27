@@ -1,8 +1,11 @@
 <?php
 
 use PHPUnit\Framework\TestCase;
+use Wumvi\Dao\Mysql\Exception\DeadlockException;
+use Wumvi\Dao\Mysql\Exception\DbReconnectException;
 use Wumvi\Dao\Mysql\Exception\DbException;
-use \Wumvi\Dao\Mysql\Exception\DuplicateRowDbException;
+use Wumvi\Dao\Mysql\Exception\DuplicateRowDbException;
+use Wumvi\Dao\Mysql\Exception\DbConnectException;
 use Symfony\Component\DependencyInjection\Container;
 use Wumvi\Dao\Mysql\Connection;
 use Wumvi\Dao\Mysql\Consts;
@@ -25,16 +28,17 @@ class ConnectionTest extends TestCase
             'r1' => self::REPLICA1_URL,
             'r2' => self::REPLICA2_URL
         ], 'req-id');
-        $isConnect = $conn->connect();
+        $conn->call('select 1')->fetchOne();
+        $isConnect = $conn->isConnected();
         $this->assertTrue($isConnect, 'connection is exits');
-        $m1 = $conn->getMysqlRawHandle();
-        $m2 = $conn->getMysqlRawHandle();
+        $m1 = $conn->getMysqlRaw();
+        $m2 = $conn->getMysqlRaw();
         $this->assertEquals($m1, $m2, 'the same connection');
 
-        $mr = $conn->getMysqlRawHandle();
+        $mr = $conn->getMysqlRaw();
         $this->assertTrue($mr instanceof \mysqli, 'instanceof \mysqli');
 
-        $this->assertNotEquals($conn->getThreadId(), Consts::THREAD_ID, 'thread is exists');
+        $this->assertNotEquals($conn->threadId, Consts::THREAD_ID, 'thread is exists');
         $this->assertTrue($conn->isConnected(), 'is connected');
 
         // $this->assertEquals(ty);
@@ -169,34 +173,85 @@ class ConnectionTest extends TestCase
 //        $baseDao->close();
 //    }
 //
+    public function testReconnectException()
+    {
+        $this->expectException(DbReconnectException::class);
 
-//
-//    public function testDeadLockException()
-//    {
-//        $this->expectException(DeadlockException::class);
-//
-//        $conn1 = new Connection(['m1' => self::MASTER_URL . '?deadlock-try-count=0']);
-//        $conn2 = new Connection(['m2' => self::MASTER_URL . '?deadlock-try-count=0']);
-//        $conn1->call('call init_dead_lock_table(3, 4)');
-//        $conn1->call('call test_dead_lock(3, 4)', [], '', MYSQLI_ASYNC);
-//        $conn2->call('call test_dead_lock(4, 3)');
-//    }
-//
+        $conn1 = new Connection(['m1' => self::MASTER_URL]);
+        $conn2 = new Connection(['m2' => self::MASTER_URL]);
+
+        $conn1->autocommit(false);
+        $conn1->beginTransaction();
+        $conn1->call('update test_deadlock_table set val = val + 1 where id = 4');
+
+        $conn2->call('kill ' . $conn1->threadId);
+        $conn2->close();
+
+        $conn1->call('update test_deadlock_table set val = val + 2 where id = 4');
+    }
+
+    public function testReconnect()
+    {
+        $conn1 = new Connection(['m1' => self::MASTER_URL]);
+
+        try {
+            $conn2 = new Connection(['m2' => self::MASTER_URL]);
+            $conn1->autocommit(false);
+            $conn1->beginTransaction();
+            $conn1->call('update test_deadlock_table set val = val + 1 where id = 4');
+
+            $conn2->call('kill ' . $conn1->threadId);
+            $conn2->close();
+
+            $conn1->call('update test_deadlock_table set val = val + 2 where id = 4');
+            $this->fail('no reconnect');
+        } catch (DbReconnectException $ex) {
+            $conn1->reconnect();
+            $this->assertTrue($conn1->isConnected(), 'ok');
+        }
+    }
+
+    public function testDeadLockException()
+    {
+        $this->expectException(DeadlockException::class);
+
+        $conn1 = new Connection(['m1' => self::MASTER_URL . '?deadlock-try-count=-1']);
+        $conn2 = new Connection(['m2' => self::MASTER_URL . '?deadlock-try-count=-1']);
+
+        $conn1->call('update test_deadlock_table set val = 0 where id in (2, 3)');
+
+        $conn1->autocommit(false);
+        $conn2->autocommit(false);
+
+        $conn1->beginTransaction();
+        $conn2->beginTransaction();
+
+        $conn1->call('update test_deadlock_table set val = val + 1 where id = 4', [], 'conn1');
+        $conn2->call('update test_deadlock_table set val = val + 1 where id = 3', [], 'conn2');
+
+        $conn1->call('update test_deadlock_table set val = val + 2 where id = 3', [], '', MYSQLI_ASYNC);
+        $conn2->call('update test_deadlock_table set val = val + 2 where id = 4');
+
+        $conn1->commit();
+        $conn2->commit();
+
+        $conn1->close();
+        $conn2->close();
+    }
+
     public function testThreadId()
     {
-        $baseDao = new Connection(['m1' => self::MASTER_URL]);
-        $data = $baseDao->call('select CONNECTION_ID() as thread_id')->fetchOne();
-        $threadId = $baseDao->getThreadId();
-        $this->assertEqualsCanonicalizing($data, ['thread_id' => $threadId . '']);
-        $baseDao->close();
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $data = $conn->call('select CONNECTION_ID() as thread_id')->fetchOne();
+        $this->assertEqualsCanonicalizing($data, ['thread_id' => $conn->threadId . '']);
+        $conn->close();
     }
 
 
     public function testEscapeString()
     {
         $conn = new Connection(['m1' => self::MASTER_URL]);
-        $data = $conn->escapeString("'");
-        $this->assertEquals($data, "\'");
+        $this->assertEquals($conn->escapeString("'"), "\'");
     }
 
     public function testFetch()
@@ -215,18 +270,18 @@ class ConnectionTest extends TestCase
         $this->assertTrue($fetch->getStmt() instanceof \mysqli_result);
         $conn->close();
     }
-//
-//    public function testParam()
-//    {
-//        $baseDao = new Connection(['master' => self::MASTER_URL]);
-//        $data = $baseDao->call('select :number number, :string string', [
-//            'number' => 1,
-//            'string' => 'test'
-//        ])->fetchOne();
-//        $this->assertEqualsCanonicalizing($data, ['number' => '1', 'string' => 'test']);
-//        $baseDao->close();
-//    }
-//
+
+    public function testParam()
+    {
+        $baseDao = new Connection(['master' => self::MASTER_URL]);
+        $data = $baseDao->call('select :p_number as number, :p_string as string', [
+            'p_number' => 1,
+            'p_string' => 'test'
+        ])->fetchOne();
+        $this->assertEqualsCanonicalizing($data, ['number' => '1', 'string' => 'test']);
+        $baseDao->close();
+    }
+
     public function testWrongParamException()
     {
         $this->expectException(DbException::class);
@@ -234,25 +289,31 @@ class ConnectionTest extends TestCase
         $conn->call('call not_exist_proc()');
         $conn->close();
     }
+
 //
     public function testDuplicateException()
     {
         $this->expectException(DuplicateRowDbException::class);
         $conn = new Connection(['master' => self::MASTER_URL]);
-        $conn->call('call test_duplicate_insert()');
+        $conn->beginTransaction();
+        $conn->call('delete from test_duplicate where id = 1');
+        $conn->call('insert into test_duplicate(id) values (1)');
+        $conn->call('insert into test_duplicate(id) values (1)');
+        $conn->commit();
         $conn->close();
     }
-//
-//    public function testWrongMethodException()
-//    {
-//        $this->expectException(DuplicateRowDbException::class);
-//        $baseDao = new Connection(['master' => self::MASTER_URL]);
-//
-//        $baseDao->call('delete from test_duplicate where id = 2');
-//        $baseDao->commit();
-//        $baseDao->insert('test_duplicate', ['id' => [2]]);
-//        $baseDao->insert('test_duplicate', ['id' => [2]]);
-//    }
+
+    public function testWrongMethodException()
+    {
+        $this->expectException(DuplicateRowDbException::class);
+        $connect = new Connection(['master' => self::MASTER_URL]);
+
+        $connect->call('delete from test_duplicate where id = 2');
+        $connect->beginTransaction();
+        $connect->insert('test_duplicate', ['id' => [2]]);
+        $connect->insert('test_duplicate', ['id' => [2]]);
+        $connect->commit();
+    }
 //
 //    public function testInsertParam()
 //    {
@@ -279,13 +340,13 @@ class ConnectionTest extends TestCase
 //        ]);
 //    }
 //
-//    public function testWrongConnection()
-//    {
-//        $this->expectException(DbConnectException::class);
-//        $baseDao = new Connection(['master' => 'mysql://root:123@mysqltest:3311/test2']);
-//        $baseDao->getMysqlRawHandle();
-//    }
-//
+    public function testWrongConnection()
+    {
+        $this->expectException(DbConnectException::class);
+        $conn = new Connection(['master' => 'mysql://root:pwd@127.0.0.1:3432/test2']);
+        $conn->getMysqlRaw();
+    }
+
     public function testCustomException()
     {
         $this->expectException(DbException::class);

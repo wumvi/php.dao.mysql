@@ -16,6 +16,10 @@ services:
     working_dir: /app/
     volumes:
       - './:/app/'
+    depends_on:
+      - php-dao-mysql-master
+      - php-dao-mysql-replica1
+      - php-dao-mysql-replica2
 
   php-dao-mysql-master:
     image: mysql:9.5.0

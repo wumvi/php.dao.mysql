@@ -7,7 +7,7 @@ class DbException extends \Exception
 {
     private string $text;
 
-    public function __construct(string $text, string $error = '', $code = 0, \Throwable $previous = null)
+    public function __construct(string $text, string $error = '', $code = 0, \Throwable|null $previous = null)
     {
         parent::__construct($error, $code, $previous);
         $this->text = $text;

@@ -2,12 +2,26 @@ parameters:
 
 services:
   _defaults:
-    autowire: false
-    autoconfigure: false
+    autowire: true
+    autoconfigure: true
 
-  Wumvi\Dao\Mysql\BaseDao:
+  Wumvi\Dao\Mysql\Connection\MasterConnection:
     public: true
-    class: Wumvi\Dao\Mysql\BaseDao
+    class: Wumvi\Dao\Mysql\Connection\MasterConnection
     arguments:
-      - master1: 'mysql://root:123@192.168.1.96:3311/test'
-        master2: 'mysql://root:123@192.168.1.96:3311/test'
+      - master1: 'mysql://root:pwd@127.0.0.1:3432/test'
+
+  Wumvi\Dao\Mysql\Connection\ReplicaConnection:
+    public: true
+    class: Wumvi\Dao\Mysql\Connection\ReplicaConnection
+    arguments:
+      - replica1: 'mysql://root:pwd@127.0.0.1:3433/test'
+        replica2: 'mysql://root:pwd@127.0.0.1:3434/test'
+
+  Wumvi\Dao\Mysql\Dao\:
+    resource: '../../src/Dao/*'
+    public: true
+
+
+
+

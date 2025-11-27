@@ -1,17 +1,12 @@
 {
   "name": "wumvi/php.dao.mysql",
-  "authors": [
-    {
-      "name": "Vitaliy Kozlenko",
-      "email": "vk@wumvi.com"
-    }
-  ],
   "require": {
     "ext-mysqli": "*"
   },
+  "version": "1.0.0",
   "require-dev": {
-    "wumvi/php.di": "^v1.0.12",
-    "phpunit/phpunit": "10.5.3"
+    "wumvi/php.di": "^v1.3.2",
+    "phpunit/phpunit": "12.4.4"
   },
   "autoload": {
     "psr-4": {

@@ -1,0 +1,14 @@
+mysqldump \
+-u root \
+-ppwd \
+--socket=/var/run/mysqld/mysqld.sock \
+--flush-privileges \
+--single-transaction \
+--flush-logs \
+--triggers \
+--routines \
+--events \
+--source-data=2 \
+--skip-comments \
+--all-databases \
+--set-gtid-purged=ON > /dump/dump.sql

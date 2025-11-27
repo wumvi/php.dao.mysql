@@ -9,3 +9,6 @@ docker run -ti \
     dfuhbu/php8.3.1-cli-dev:1 \
     bash
 ```
+
+
+SELECT @@server_id

@@ -3,7 +3,7 @@ declare(strict_types=1);
 
 namespace Wumvi\Dao\Mysql;
 
-class Consts
+final readonly class Consts
 {
     public const string CONNECTION_IS_EMPTY_MSG = 'connection-is-empty';
     public const int CONNECTION_IS_EMPTY_CODE = 1;
@@ -18,6 +18,4 @@ class Consts
 
     public const int THREAD_ID = -1;
     public const int DEFAULT_PORT = 3306;
-
-    public const bool DEFAULT_SLAVE = false;
 }

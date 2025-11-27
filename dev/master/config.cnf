@@ -1,0 +1,32 @@
+[mysqld]
+user=mysql
+
+character-set-server = utf8mb4
+collation-server = utf8mb4_unicode_ci
+init_connect = 'SET NAMES utf8mb4'
+host_cache_size = 0
+log_bin_trust_function_creators = 1
+
+authentication_policy = CACHING_SHA2_PASSWORD
+port = 3432
+mysqlx = 0
+
+server_id = 1
+log_bin = /var/log/mysql/mysql-bin.log
+binlog_expire_logs_seconds = 864000
+max_binlog_size = 100M
+binlog_format = row
+
+log_replica_updates = ON
+
+relay-log = /var/log/mysql/slave-mysql-relay-bin
+relay-log-index = /var/log/mysql/slave-mysql-relay-bin.index
+
+general_log_file        = /var/log/mysql/mysql-sql.log
+general_log             = 0
+
+gtid_mode = ON
+enforce_gtid_consistency = ON
+
+[client]
+default-character-set = utf8

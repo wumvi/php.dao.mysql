@@ -1,13 +1,74 @@
-version: '3.8'
 services:
-  php.dao.mysql.db:
-    image: mysql:8.0.23
-    command: --default-authentication-plugin=mysql_native_password
-    container_name: php.dao.mysql.db
-    hostname: mysql
-    ports:
-      - '3311:3306'
+  init:
+    image: alpine
+    entrypoint: [ "/bin/sh", "-c", "chmod a+w /dump/" ]
+    network_mode: host
     volumes:
-      - ./workdir/db/:/var/lib/mysql
+      - ./workdir/dump/:/dump/
+
+  php-dao-cli:
+    container_name: php-dao-cli
+    hostname: php-dao-cli
+    build:
+      dockerfile: ./dev/Dockerfile
+      context: ./
+    network_mode: host
+    working_dir: /app/
+    volumes:
+      - './:/app/'
+
+  php-dao-mysql-master:
+    image: mysql:9.5.0
+    container_name: php.dao.mysql-master
+    hostname: php.dao.mysql-master
+    network_mode: host
+    volumes:
+      - ./workdir/master-db/:/var/lib/mysql
+      - ./workdir/master-log/:/var/log/mysql/
+      - ./dev/master/config.cnf:/etc/mysql/conf.d/custom.cnf
+      - ./dev/master/:/docker-entrypoint-initdb.d/
+      - ./workdir/dump/:/dump/
     environment:
-      - MYSQL_ROOT_PASSWORD=123
+      MYSQL_ROOT_PASSWORD: pwd
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u root -p$MYSQL_ROOT_PASSWORD || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+    depends_on:
+      - init
+
+  php-dao-mysql-replica1:
+    image: mysql:9.5.0
+    container_name: php.dao.mysql-replica1
+    hostname: php.dao.mysql-replica1
+    network_mode: host
+    volumes:
+      - ./workdir/replica1-db/:/var/lib/mysql
+      - ./workdir/replica1-log/:/var/log/mysql/
+      - ./dev/replica1/config.cnf:/etc/mysql/conf.d/custom.cnf
+      - ./dev/replica1/:/docker-entrypoint-initdb.d/
+      - ./workdir/dump/:/dump/
+    environment:
+      - MYSQL_ROOT_PASSWORD=pwd
+    depends_on:
+      php-dao-mysql-master:
+        condition: service_healthy
+
+  php-dao-mysql-replica2:
+    image: mysql:9.5.0
+    container_name: php.dao.mysql-replica2
+    hostname: php.dao.mysql-replica2
+    network_mode: host
+    volumes:
+      - ./workdir/replica2-db/:/var/lib/mysql
+      - ./workdir/replica2-log/:/var/log/mysql/
+      - ./dev/replica2/config.cnf:/etc/mysql/conf.d/custom.cnf
+      - ./dev/replica2/:/docker-entrypoint-initdb.d/
+      - ./workdir/dump/:/dump/
+    environment:
+      MYSQL_ROOT_PASSWORD: pwd
+    depends_on:
+      php-dao-mysql-master:
+        condition: service_healthy

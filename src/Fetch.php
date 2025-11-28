@@ -49,7 +49,7 @@ class Fetch
             return;
         }
 
-        $this->stmt->free();
+        $this->stmt->free_result();
         $this->isClose = true;
     }
 

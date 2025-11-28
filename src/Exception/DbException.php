@@ -5,16 +5,15 @@ namespace Wumvi\Dao\Mysql\Exception;
 
 class DbException extends \Exception
 {
-    private string $text;
+    public readonly string $publicMsg;
 
-    public function __construct(string $text, string $error = '', $code = 0, \Throwable|null $previous = null)
-    {
-        parent::__construct($error, $code, $previous);
-        $this->text = $text;
-    }
-
-    public function getText(): string
-    {
-        return $this->text;
+    public function __construct(
+        string $publicMsg,
+        string $message = '',
+        $code = 0,
+        \Throwable|null $previous = null
+    ) {
+        parent::__construct($message, $code, $previous);
+        $this->publicMsg = $publicMsg;
     }
 }

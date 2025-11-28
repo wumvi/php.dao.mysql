@@ -3,11 +3,12 @@ declare(strict_types=1);
 
 namespace Wumvi\Dao\Mysql;
 
+use Wumvi\Dao\Mysql\Exception\DbEmptyDataException;
 use Wumvi\Dao\Mysql\Exception\DbException;
 use Wumvi\Dao\Mysql\Exception\DbReconnectException;
 use Wumvi\Dao\Mysql\Exception\DeadlockException;
 use Wumvi\Dao\Mysql\Exception\DuplicateRowDbException;
-use Wumvi\Dao\Mysql\Exception\UnknownDbException;
+use Wumvi\Dao\Mysql\Exception\DbUnknownException;
 use Wumvi\Dao\Mysql\Exception\DbConnectException;
 
 class Connection
@@ -26,7 +27,7 @@ class Connection
         }
     }
 
-    private bool $isAutocommit = false;
+    private bool $isAutocommit = true;
     private ?string $unixSocket = null;
     private int $connectionFlags = 0;
     private int $deadLockTryCount = Consts::DEADLOCK_TRY_COUNT {
@@ -56,7 +57,7 @@ class Connection
 
         if (isset($raw['query'])) {
             parse_str($raw['query'], $query);
-            $this->isAutocommit = ($query['autocommit'] ?? '0') === '1';
+            $this->isAutocommit = ($query['autocommit'] ?? '1') === '1';
             $this->unixSocket = $query['socket'] ?? null;
             $this->connectionFlags = isset($query['flag']) ? (int)$query['flag'] : 0;
             $deadlockTryCount = (int)($query['deadlock-try-count'] ?? Consts::DEADLOCK_TRY_COUNT);
@@ -81,9 +82,9 @@ class Connection
     {
         if ($this->mysql === null) {
             $this->mysql = mysqli_init();
-
-            if (!$this->isAutocommit && !$this->mysql->options(MYSQLI_INIT_COMMAND, 'SET AUTOCOMMIT = 0')) {
-                throw new DbConnectException('Setting MYSQLI_INIT_COMMAND failed');
+            $result = $this->mysql->options(MYSQLI_INIT_COMMAND, 'SET AUTOCOMMIT = ' . intval($this->isAutocommit));
+            if (!$result) {
+                throw new DbConnectException('db init error', 'Setting MYSQLI_INIT_COMMAND failed');
             }
             try {
                 $this->mysql->real_connect(
@@ -97,15 +98,16 @@ class Connection
                 );
             } catch (\mysqli_sql_exception $ex) {
                 $text = sprintf(
-                    Consts::ERROR_CONNECT_MSG,
+                    'Error to connect to mysql server %s@%s:%s:%s:%s %s',
                     $this->user,
                     $this->hostname,
                     $this->port,
                     $this->mysql->connect_errno,
-                    $this->mysql->connect_error
+                    $this->mysql->connect_error,
+                    $ex->getMessage()
                 );
                 $this->mysql = null;
-                throw new DbConnectException($text, $ex->getMessage(), $ex->getCode(), $ex);
+                throw new DbConnectException('connect error', $text, $ex->getCode(), $ex);
             }
             $this->threadId = $this->mysql->thread_id;
             register_shutdown_function(function () {
@@ -149,7 +151,7 @@ class Connection
     {
         $status = $this->getMysqlRaw()->begin_transaction($flags, $name);
         if (!$status) {
-            throw new DbException('error to start transaction');
+            throw new DbException('begin transaction error', 'error to start transaction');
         }
     }
 
@@ -164,7 +166,7 @@ class Connection
     {
         $status = $this->getMysqlRaw()->autocommit($enable);
         if (!$status) {
-            throw new DbException('error to start transaction');
+            throw new DbException('autocommit error', 'error to set autocommit: ' . ($enable ? 'true' : 'false'));
         }
     }
 
@@ -186,96 +188,260 @@ class Connection
         return $this->threadId !== Consts::THREAD_ID;
     }
 
-    public function insert1D(string $table, array $columns, array $planeArray): void
+    private function phpTypeToMysqli($value): string
     {
-
+        return match (true) {
+            is_int($value) => 'i',
+            is_float($value) => 'd',
+            is_bool($value) => 'i',
+            is_null($value) => 's',
+            default => 's',
+        };
     }
 
-    public function insertSingle() {
-
-    }
-
-    public function insert2D() {
-
-    }
-
-    public function insert2DTransaction() {
-
-    }
-
-//    /**
-//     * @param string $table
-//     * @param array $data
-//     * @param string $function
-//     * @return int
-//     * @throws DbConnectException
-//     * @throws DbException
-//     * @throws DuplicateRowDbException
-//     * @throws UnknownDbException
-//     */
-//    public function insert(string $table, array $data, string $function = ''): int
-//    {
-//        $mysql = $this->getMysqlRawHandle();
-//
-//        $keys = array_keys($data);
-//        $fields = '`' . implode('`,`', $keys) . '`';
-//        $sql = 'INSERT INTO ' . $table . ' (' . $fields . ') values ';
-//        $count = count($data[$keys[0]]);
-//        for ($i = 0; $i < $count; $i++) {
-//            $values = [];
-//            foreach ($keys as $field) {
-//                $values[] = Utils::convert($data[$field][$i], $mysql);
-//            }
-//            $sql .= ' (' . implode(',', $values) . '),';
-//        }
-//        $sql = substr($sql, 0, strlen($sql) - 1);
-//        $sql .= ' # ' . $function . ' ' . $this->requestId;
-//        try {
-//            $mysql->query($sql);
-//            return $mysql->insert_id;
-//        } catch (\mysqli_sql_exception $ex) {
-//            $text = sprintf(Consts::ERROR_MSG, $sql, $ex->getMessage());
-//            if ($ex->getCode() === 1062) {
-//                throw new DuplicateRowDbException($text, Consts::DUPLICATE_MSG, $ex->getCode(), $ex);
-//            }
-//
-//            throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
-//        } catch (\Throwable $ex) {
-//            throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
-//        }
-//    }
-
-
-    /**
-     * @param int $flags
-     * @return void
-     * @throws \Exception
-     */
-    public function commit(int $flags = 0): void
+    function buildMysqliParamTypes(array $values): string
     {
-        try {
-            $this->getMysqlRaw()->commit($flags);
-        } catch (\mysqli_sql_exception $ex) {
-            throw new DbException('error to commit', $ex->getMessage(), $ex->getCode(), $ex);
+        $types = '';
+        foreach ($values as $v) {
+            $types .= $this->phpTypeToMysqli($v);
+        }
+        return $types;
+    }
+
+    public function insertSingle(
+        string $table,
+        array $columns = [],
+        array $values = [],
+        string $function = ''
+    ) {
+        $columns = '`' . implode('`,`', $columns) . '`';
+        $value = implode(',', array_fill(0, count($values), '?'));
+        $comment = $this->getComment($function);
+
+        $sql = "insert into $table ($columns) values($value) $comment";
+
+        $insertId = -1;
+        $stmt = $this->query(function (\mysqli $mysqli) use ($sql, $values, &$insertId) {
+            $stmt = $this->prepare($sql, $mysqli);
+            $types = $this->buildMysqliParamTypes($values);
+            $this->bind($stmt, $sql, $mysqli, $types, $values);
+            $this->execute($stmt, $sql, $mysqli);
+            $insertId = $stmt->insert_id;
+
+            return $stmt;
+        }, $sql);
+
+        $stmt->free_result();
+
+        return $insertId;
+    }
+
+    private function bind(\mysqli_stmt $stmt, string $sql, \mysqli $mysqli, $types, &$binds)
+    {
+        $result = $stmt->bind_param($types, ...$binds);
+        if ($result === false) {
+            throw new DbException(
+                'bind is failed',
+                ' bind is failed: ' . $sql . ' ' . $mysqli->error . ' ' . $mysqli->errno,
+                $mysqli->errno
+            );
         }
     }
 
-    public function query(
-        callable $cb,
-        string $sql,
+    private function prepare(string $sql, \mysqli $mysqli): \mysqli_stmt
+    {
+        $stmt = $mysqli->prepare($sql);
+        if ($stmt === false) {
+            throw new DbException(
+                'prepare is failed',
+                ' prepare is failed: ' . $sql . ' ' . $mysqli->error . ' ' . $mysqli->errno,
+                $mysqli->errno
+            );
+        }
+
+        return $stmt;
+    }
+
+    private function execute(\mysqli_stmt $stmt, string $sql, \mysqli $mysqli): void
+    {
+        $result = $stmt->execute();
+        if ($result === false) {
+            throw new DbException(
+                'execute is failed',
+                ' execute is failed: ' . $sql . ' ' . $mysqli->error . ' ' . $mysqli->errno,
+                $mysqli->errno
+            );
+        }
+    }
+
+    public function insert1D(
+        string $table,
+        array $columns = [],
+        array $values = [],
+        string $function = ''
     ) {
-        $mysqlRaw = $this->getMysqlRaw();
-        $result = false;
+        if (count($values) === 0) {
+            throw new DbEmptyDataException('empty data for insert', 'empty data for insert 2d');
+        }
+
+        if (count($values) % count($columns) !== 0) {
+            throw new DbException(
+                'wrong value size for insert',
+                'wrong values size: val=' . count($values) . ' column=' . count($columns)
+            );
+        }
+
+        $valueChunks = array_chunk($values, count($columns));
+        $sqlValues = [];
+        $types = '';
+        foreach ($valueChunks as $valueChunk) {
+            $sqlValues[] = implode(',', array_fill(0, count($valueChunk), '?'));
+            $types .= $this->buildMysqliParamTypes($valueChunk);
+        }
+
+        $sqlValues = '(' . implode('),(', $sqlValues) . ')';
+        $columns = '`' . implode('`,`', $columns) . '`';
+        $comment = $this->getComment($function);
+        $sql = "insert into $table ($columns) values $sqlValues $comment";
+        $insertId = -1;
+
+        $stmt = $this->query(function (\mysqli $mysqli) use ($sql, $types, $values, &$insertId) {
+            $stmt = $this->prepare($sql, $mysqli);
+            $this->bind($stmt, $sql, $mysqli, $types, $values);
+            $this->execute($stmt, $sql, $mysqli);
+
+            $insertId = $mysqli->insert_id;
+
+            return $stmt;
+        }, $sql);
+        $stmt->free_result();
+
+        return $insertId;
+    }
+
+    public function insert2D(
+        string $table,
+        array $columns = [],
+        array $values = [],
+        string $function = ''
+    ): array {
+        if (count($values) === 0) {
+            throw new DbEmptyDataException('empty data for insert', 'empty data for insert 2d');
+        }
+
+        $types = $this->buildMysqliParamTypes($values[0]);
+        $sqlValue = implode(',', array_fill(0, count($values[0]), '?'));
+
+        $columns = '`' . implode('`,`', $columns) . '`';
+        $comment = $this->getComment($function);
+        $sql = "insert into $table ($columns) values ($sqlValue) $comment";
+
+        $insertIds = [];
+
+        $this->query(function (\mysqli $mysqli) use ($sql, $types, $values, &$insertIds) {
+            $stmt = $this->prepare($sql, $mysqli);
+            $params = [];
+            foreach ($values[0] as &$v) {
+                $params[] = $v;
+            }
+
+            $this->bind($stmt, $sql, $mysqli, $types, $params);
+
+            foreach ($values as $value) {
+                foreach ($value as $k => &$v) {
+                    $params[$k] = $v;
+                }
+                $stmt->execute();
+                $insertIds[] = $mysqli->insert_id;
+            }
+
+            return $stmt;
+        }, $sql);
+
+        return $insertIds;
+    }
+
+    public function insert2DTransaction(
+        string $table,
+        array $columns = [],
+        array $values = [],
+        string $function = ''
+    ) {
+        $mysqli = $this->getMysqlRaw();
+        $mysqli->autocommit(false);
+        $mysqli->begin_transaction();
+        $this->insert2D($table, $columns, $values, $function);
+        $mysqli->commit();
+        $this->cleanup($mysqli);
+        $mysqli->autocommit(true);
+
+    }
+
+    /**
+     * @param int $flags
+     * @param string|null $name
+     * @return void
+     * @throws \Exception
+     */
+    public function commit(int $flags = 0, string|null $name = null): void
+    {
+        try {
+            $this->getMysqlRaw()->commit($flags, $name);
+        } catch (\mysqli_sql_exception $ex) {
+            throw new DbException(
+                'error to commit',
+                'error to commit ' . $ex->getMessage(),
+                $ex->getCode(),
+                $ex
+            );
+        }
+    }
+
+    /**
+     * @param int $flags
+     * @param string|null $name
+     * @return void
+     * @throws \Exception
+     */
+    public function rollback(int $flags = 0, string|null $name = null): void
+    {
+        try {
+            //  $this->cleanup($this->getMysqlRaw());
+            $this->getMysqlRaw()->rollback($flags, $name);
+        } catch (\mysqli_sql_exception $ex) {
+            throw new DbException(
+                'error to rollback',
+                'error to rollback ' . $ex->getMessage(),
+                $ex->getCode(),
+                $ex
+            );
+        }
+    }
+
+    public function cleanup(\mysqli $mysqli): void
+    {
+        $mysqli->stmt_init();
+        do {
+            if ($result = $mysqli->store_result()) {
+                $result->free();
+            }
+        } while ($mysqli->more_results() && $mysqli->next_result());
+    }
+
+    public function query(callable $cb, string $sql): mixed
+    {
+        $mysqli = $this->getMysqlRaw();
+        $stmt = null;
         $deadlockEx = null;
         $tryCount = 1;
         $isDeadlock = false;
         for ($tryIndex = 0; $tryIndex < $tryCount; $tryIndex++) {
             try {
-                $result = $cb($mysqlRaw);
+                $stmt = $cb($mysqli);
             } catch (\mysqli_sql_exception $ex) {
-                $text = sprintf(Consts::ERROR_MSG, $sql, $ex->getMessage());
                 if ($ex->getCode() === 1062) {
-                    throw new DuplicateRowDbException($text, Consts::DUPLICATE_MSG, $ex->getCode(), $ex);
+                    $text = sprintf('Duplicate raw for sql "%s". Msg "%s".', $sql, $ex->getMessage());
+                    throw new DuplicateRowDbException('duplicate row', $text, $ex->getCode(), $ex);
                 }
 
                 if ($ex->getCode() === 1213) {
@@ -288,12 +454,13 @@ class Connection
                 }
 
                 if (($ex->getCode() === 2006 || $ex->getCode() === 2013)) {
-                    throw new DbReconnectException('reconnect');
+                    throw new DbReconnectException('connection is lost', 'connection is lost', $ex->getCode());
                 }
 
-                throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
+                $text = sprintf('Error execute sql "%s". Msg "%s"', $sql, $ex->getMessage());
+                throw new DbException('db error', $text, $ex->getCode(), $ex);
             } catch (\Throwable $ex) {
-                throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
+                throw new DbUnknownException('unknown db error', $ex->getMessage(), $ex->getCode(), $ex);
             }
 
             $deadlockEx = null;
@@ -301,13 +468,29 @@ class Connection
         }
 
         if ($deadlockEx !== null) {
-            $text = sprintf(Consts::ERROR_MSG, $sql, $deadlockEx->getMessage());
-            throw new DeadlockException($text, $deadlockEx->getMessage(), $deadlockEx->getCode(), $deadlockEx);
+            $text = sprintf('deadlock for sql "%s". Msg "%s".', $sql, $deadlockEx->getMessage());
+            throw new DeadlockException('deadlock', $text, $deadlockEx->getCode(), $deadlockEx);
         }
 
-        if ($result === false) {
-            return null;
+        return $stmt;
+    }
+
+    private function getComment(string $function): string
+    {
+        $requestId = $this->requestId ?? '';
+        if (empty($function) && empty($requestId)) {
+            return '';
         }
+
+        $comment = ' #';
+        if (empty($function)) {
+            $comment .= ' ' . $function;
+        }
+        if (empty($requestId)) {
+            $comment .= ' ' . $requestId;
+        }
+
+        return $comment;
     }
 
     /**
@@ -319,14 +502,20 @@ class Connection
         string $function = '',
         int $mode = MYSQLI_STORE_RESULT
     ): Fetch|null {
-        $mysqlRaw = $this->getMysqlRaw();
+        $mysqli = $this->getMysqlRaw();
 
-        if (!empty($params)) {
+        $stmt = $this->query(function () use ($sql, $params, $mode, $function, $mysqli) {
+            if (empty($params)) {
+                return $mysqli->query($sql, $mode);
+            }
+
             $order = [];
             $sql = preg_replace_callback('/:p_[\w_]+/', function ($matches) use (&$order) {
                 $order[] = substr($matches[0], 1);
                 return '?';
             }, $sql);
+
+            $sql .= $this->getComment($function);
 
             $types = '';
             $binds = [];
@@ -336,68 +525,30 @@ class Connection
                 $types .= $type;
                 $binds[] = $value;
             }
+
+            $stmt = $this->prepare($sql, $mysqli);
+            $this->bind($stmt, $sql, $mysqli, $types, $binds);
+            $this->execute($stmt, $sql, $mysqli);
+            return $stmt;
+        }, $sql);
+
+
+        if ($stmt instanceof \mysqli_result) {
+
+            return new Fetch($stmt, $mysqli);
         }
 
-        $sql .= ' # ' . $function . ' ' . ($this->requestId ?? '');
-        $result = false;
-        $deadlockEx = null;
-        $tryCount = 1;
-        $isDeadlock = false;
-        for ($tryIndex = 0; $tryIndex < $tryCount; $tryIndex++) {
-            try {
-                if (empty($params)) {
-                    $result = $mysqlRaw->query($sql, $mode);
-                } else {
-                    $stmt = $mysqlRaw->prepare($sql);
-                    if ($stmt === false) {
-                        throw new DbException('prepare is wrong: ' . $sql);
-                    }
-
-                    $stmt->bind_param($types, ...$binds);
-                    $result = $stmt->execute();
-                    if ($result === false) {
-                        throw new DbException("Prepare failed: (" . $mysqlRaw->errno . ") " . $mysqlRaw->error);
-                    }
-                    $result = $stmt->get_result();
-                }
-            } catch (\mysqli_sql_exception $ex) {
-                $text = sprintf(Consts::ERROR_MSG, $sql, $ex->getMessage());
-                if ($ex->getCode() === 1062) {
-                    throw new DuplicateRowDbException($text, Consts::DUPLICATE_MSG, $ex->getCode(), $ex);
-                }
-
-                if ($ex->getCode() === 1213) {
-                    $deadlockEx = $ex;
-                    if (!$isDeadlock) {
-                        $tryCount += $this->deadLockTryCount;
-                        $isDeadlock = true;
-                    }
-                    continue;
-                }
-
-                if (($ex->getCode() === 2006 || $ex->getCode() === 2013)) {
-                    throw new DbReconnectException('reconnect');
-                }
-
-                throw new DbException($text, $ex->getMessage(), $ex->getCode(), $ex);
-            } catch (\Throwable $ex) {
-                throw new UnknownDbException($ex->getMessage(), Consts::UNKNOWN_MSG, $ex->getCode(), $ex);
-            }
-
-            $deadlockEx = null;
-            break;
-        }
-
-        if ($deadlockEx !== null) {
-            $text = sprintf(Consts::ERROR_MSG, $sql, $deadlockEx->getMessage());
-            throw new DeadlockException($text, $deadlockEx->getMessage(), $deadlockEx->getCode(), $deadlockEx);
-        }
-
-        if ($result === false) {
+        if (is_bool($stmt)) {
             return null;
         }
 
-        return new Fetch($result, $mysqlRaw);
+        $result = $stmt->get_result();
+        if (is_bool($result)) {
+            $stmt->free_result();
+            return null;
+        }
+
+        return new Fetch($result, $mysqli);
     }
 
     public function escapeString(string $data): string

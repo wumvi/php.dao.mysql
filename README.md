@@ -15,3 +15,4 @@ SELECT @@server_id
 
 
 XDEBUG_MODE=coverage ./vendor/bin/phpunit --filter testDeadLockException phpunit/tests/ConnectionTest.php
+XDEBUG_MODE=coverage ./vendor/bin/phpunit --filter testCustomTextException phpunit/tests/ConnectionTest.php

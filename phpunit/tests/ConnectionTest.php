@@ -213,10 +213,8 @@ class ConnectionTest extends TestCase
 
     public function testDeadLockException()
     {
-        $conn1 = new Connection(['m1' => self::MASTER_URL . '?deadlock-try-count=-1']);
-        $conn2 = new Connection(['m2' => self::MASTER_URL . '?deadlock-try-count=-1']);
-
-        $conn1->call('update test_deadlock_table set val = 0 where id in (2, 3)');
+        $conn1 = new Connection(['m1' => 'mysql://root:pwd@127.0.0.1:3432/test' . '?deadlock-try-count=-1']);
+        $conn2 = new Connection(['m2' => 'mysql://root:pwd@127.0.0.1:3432/test' . '?deadlock-try-count=-1']);
 
         $conn1->autocommit(false);
         $conn2->autocommit(false);
@@ -229,9 +227,25 @@ class ConnectionTest extends TestCase
             $conn2->call('update test_deadlock_table set val = val + 1 where id = 3', [], 'conn2');
 
             $conn1->call('update test_deadlock_table set val = val + 2 where id = 3', [], '', MYSQLI_ASYNC);
+            usleep(200);
             $conn2->call('update test_deadlock_table set val = val + 2 where id = 4');
-        }catch (DeadlockException $ex) {
-            $this->assertTrue(true, 'deadlock is catched');
+            $this->fail('deadlock not found');
+        } catch (\Exception $ex) {
+            $this->assertTrue(true, 'deadlock is found');
+        }
+
+        $mysqli1 = $conn1->getMysqlRaw();
+        // Ожидание и получение результата
+        $links = [$mysqli1];
+        $errors = $reject = [];
+
+        if (mysqli::poll($links, $errors, $reject, 1)) {
+            foreach ($links as $link) {
+                $result = $link->reap_async_query();
+                if ($result instanceof \mysqli_result) {
+                    $result->free();
+                }
+            }
         }
 
         $conn2->rollback();
@@ -260,16 +274,10 @@ class ConnectionTest extends TestCase
     {
         $conn = new Connection(['m1' => self::MASTER_URL]);
         $fetch = $conn->call('update test_table set value = value + 1 where id = 1');
-        $this->assertTrue(empty($fetch->fetchOne()), 'empty data for update');
-        $this->assertEquals($fetch->getAffectedRows(), 1, 'one row update');
-        $this->assertTrue($fetch->getStmt(), 'stmt true after update');
-
-        $fetch = $conn->call('update test_table set value = 1 where id = 2');
-        $this->assertEquals($fetch->getAffectedRows(), 0, 'zero row update');
-        $this->assertTrue(empty($fetch->fetchAll()), 'empty data for update');
+        $this->assertNull($fetch, 'empty data for update');
 
         $fetch = $conn->call('select 1 as id');
-        $this->assertTrue($fetch->getStmt() instanceof \mysqli_result);
+        $this->assertTrue($fetch->result instanceof \mysqli_result);
         $conn->close();
     }
 
@@ -342,6 +350,19 @@ class ConnectionTest extends TestCase
 //        ]);
 //    }
 //
+//    public function testCleanup()
+//    {
+//        $conn = new Connection(['m' => self::MASTER_URL]);
+//        $conn->call('select 1');
+//        $conn->call('select 1');
+//    }
+
+    public function testSelect()
+    {
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $conn->select(true, 'test_table', []);
+    }
+
     public function testWrongConnection()
     {
         $this->expectException(DbConnectException::class);

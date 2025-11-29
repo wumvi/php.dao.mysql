@@ -5,20 +5,26 @@ namespace Wumvi\Dao\Mysql;
 
 class Fetch
 {
-    private \mysqli_result|true $stmt;
+    public \mysqli_result $result {
+        get {
+            return $this->result;
+        }
+    }
     private \mysqli $mysql;
 
     private bool $isClose = false;
 
-    public function __construct(\mysqli_result|true $stmt, \mysqli $mysql)
+    public function __construct(\mysqli_result $result, \mysqli $mysql)
     {
-        $this->stmt = $stmt;
+        $this->result = $result;
         $this->mysql = $mysql;
     }
 
     public function __destruct()
     {
-        $this->free();
+        if (!$this->isClose) {
+            $this->result->free_result();
+        }
     }
 
     public function getAffectedRows(): int
@@ -26,41 +32,37 @@ class Fetch
         return $this->mysql->affected_rows;
     }
 
-    public function fetchAll(): array
-    {
-        if ($this->stmt === true) {
-            return [];
-        }
-
-        $data = $this->stmt->fetch_all(MYSQLI_ASSOC);
-        $this->free();
-
-        return $data;
-    }
-
-    public function getStmt(): \mysqli_result|true
-    {
-        return $this->stmt;
-    }
-
     public function free(): void
     {
-        if ($this->stmt === true || $this->isClose) {
+        if ($this->isClose) {
             return;
         }
 
-        $this->stmt->free_result();
+        $this->result->free_result();
         $this->isClose = true;
     }
 
     public function fetchOne(): array
     {
-        if ($this->stmt === true) {
+        if ($this->isClose) {
             return [];
         }
 
-        $data = $this->stmt->fetch_assoc() ?: [];
-        $this->free();
+        $data = $this->result->fetch_assoc() ?: [];
+        $this->result->free_result();
+        $this->isClose = true;
+
+        return $data;
+    }
+
+    public function fetchAll(): array
+    {
+        if ($this->isClose) {
+            return [];
+        }
+        $data = $this->result->fetch_all(MYSQLI_ASSOC);
+        $this->result->free_result();
+        $this->isClose = true;
 
         return $data;
     }

@@ -3,7 +3,7 @@
   "require": {
     "ext-mysqli": "*"
   },
-  "version": "v1.0.7",
+  "version": "v1.0.8",
   "require-dev": {
     "wumvi/php.di": "^v1.3.2",
     "phpunit/phpunit": "12.4.4"

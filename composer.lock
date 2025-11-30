@@ -4,8 +4,39 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "d4c84392c6b7eb4e9a4be5dcd5b70872",
-    "packages": [],
+    "content-hash": "50dc690062f62ba68731394fcaa3d3d6",
+    "packages": [
+        {
+            "name": "wumvi/wm.php.public-exception",
+            "version": "v1.0.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/wumvi/wm.php.public-exception.git",
+                "reference": "89a85fa20a0871d73c6f3615e2d6b4f339857c7f"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/wumvi/wm.php.public-exception/zipball/89a85fa20a0871d73c6f3615e2d6b4f339857c7f",
+                "reference": "89a85fa20a0871d73c6f3615e2d6b4f339857c7f",
+                "shasum": ""
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "Wumvi\\PublicException\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "proprietary"
+            ],
+            "support": {
+                "issues": "https://github.com/wumvi/wm.php.public-exception/issues",
+                "source": "https://github.com/wumvi/wm.php.public-exception/tree/v1.0.0"
+            },
+            "time": "2025-11-30T22:41:35+00:00"
+        }
+    ],
     "packages-dev": [
         {
             "name": "myclabs/deep-copy",

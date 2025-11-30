@@ -13,8 +13,8 @@ use Wumvi\Dao\Mysql\Exception\DbConnectException;
 
 class Connection
 {
-    public const int D1D = 1;
-    public const int D2D = 2;
+    public const int ARRAY_1D = 1;
+    public const int ARRAY_2D = 2;
 
     private string $dbName;
     private string $user;
@@ -55,7 +55,10 @@ class Connection
 
         $raw = parse_url($url);
         if (!is_array($raw)) {
-            throw new DbConnectException('wrong-url-connect');
+            throw new DbConnectException(
+                Consts::CONNECTION_WRONG_URL_CONNECT,
+                'db connect wrong. Check url ' . $url
+            );
         }
 
         if (isset($raw['query'])) {
@@ -191,7 +194,7 @@ class Connection
         return $this->threadId !== Consts::THREAD_ID;
     }
 
-    private function phpTypeToMysqli($value): string
+    public function phpTypeToMysqli($value): string
     {
         return match (true) {
             is_int($value) => 'i',
@@ -233,13 +236,13 @@ class Connection
         return ' where ' . implode(',', $condition);
     }
 
-    private function prepExec($sql, array $where): \mysqli_stmt
+    private function prepExec($sql, array $bind): \mysqli_stmt
     {
-        return $this->query(function (\mysqli $mysqli) use ($sql, $where) {
+        return $this->query(function (\mysqli $mysqli) use ($sql, $bind) {
             $stmt = $this->prepare($sql, $mysqli);
-            if (!empty($where)) {
-                $types = $this->buildMysqliParamTypes($where);
-                $values = array_values($where);
+            if (!empty($bind)) {
+                $types = $this->buildMysqliParamTypes($bind);
+                $values = array_values($bind);
                 $this->bind($stmt, $sql, $mysqli, $types, $values);
             }
             $this->execute($stmt, $sql, $mysqli);
@@ -260,14 +263,10 @@ class Connection
         $sql .= $this->getComment($function);
         $stmt = $this->prepExec($sql, $where);
 
+        /** @var \mysqli_result $result */
         $result = $stmt->get_result();
-        if (is_bool($result)) {
-            $stmt->free_result();
-            return [];
-        }
 
-        $mysqli = $this->getMysqlRaw();
-        $fetch = new Fetch($result, $mysqli);
+        $fetch = new Fetch($result, $stmt->affected_rows);
 
         return $isOne ? $fetch->fetchOne() : $fetch->fetchAll();
     }
@@ -288,7 +287,7 @@ class Connection
         $sql .= $this->getCondition($where);
         $sql .= $this->getComment($function);
 
-        $this->query(function (\mysqli $mysqli) use ($sql, $set, $where) {
+        $stmt = $this->query(function (\mysqli $mysqli) use ($sql, $set, $where) {
             $stmt = $this->prepare($sql, $mysqli);
             $bindSet = array_values($set);
             if (!empty($where)) {
@@ -311,8 +310,7 @@ class Connection
             return $stmt;
         }, $sql);
 
-        $mysqli = $this->getMysqlRaw();
-        return $mysqli->affected_rows;
+        return $stmt->affected_rows;
     }
 
     public function delete(
@@ -323,40 +321,9 @@ class Connection
         $sql = 'delete from ' . $table;
         $sql .= $this->getCondition($where);
         $sql .= $this->getComment($function);
+        $stmt = $this->prepExec($sql, $where);
 
-        $this->prepExec($sql, $where);
-        $mysqli = $this->getMysqlRaw();
-
-        return $mysqli->affected_rows;
-    }
-
-    public function insertSingle(
-        string $table,
-        array|string $columns = [],
-        array $values = [],
-        string $function = ''
-    ) {
-        $columns = is_string($columns) ? $columns : ('`' . implode('`,`', $columns) . '`');
-        $value = implode(',', array_fill(0, count($values), '?'));
-        $comment = $this->getComment($function);
-
-        $sql = "insert into $table ($columns) values($value) $comment";
-
-        $insertId = -1;
-        $stmt = $this->query(function (\mysqli $mysqli) use ($sql, $values, &$insertId) {
-            $stmt = $this->prepare($sql, $mysqli);
-            $types = $this->buildMysqliParamTypes($values);
-            $bindValue = array_values($values);
-            $this->bind($stmt, $sql, $mysqli, $types, $bindValue);
-            $this->execute($stmt, $sql, $mysqli);
-            $insertId = $stmt->insert_id;
-
-            return $stmt;
-        }, $sql);
-
-        $stmt->free_result();
-
-        return $insertId;
+        return $stmt->affected_rows;
     }
 
     private function bind(\mysqli_stmt $stmt, string $sql, \mysqli $mysqli, $types, &$binds)
@@ -397,71 +364,103 @@ class Connection
         }
     }
 
-    public function insertOne()
-    {
+    public function insertSingle(
+        string $table,
+        array $data = [],
+        string $function = '',
+    ) {
+        if (count($data) === 0) {
+            return -1;
+        }
 
+        $mysqli = $this->getMysqlRaw();
+        $columns = array_keys($data);
+        $values = array_values($data);
+
+        $sql = 'insert into ' . $table;
+        $sql .= '(`' . implode('`,`', $columns) . '`)';
+        $sql .= 'values (' . implode(',', array_fill(0, count($values), '?')) . ')';
+        $sql .= $this->getComment($function);
+
+        $stmt = $this->prepExec($sql, $values);
+        $stmt->free_result();
+
+        return $mysqli->insert_id;
     }
 
-    public function insert1D(
+    public function insert1DBigBind(
         string $table,
         array|string $columns = [],
         array $values = [],
-        int $type = self::D1D,
         string $function = '',
+    ): void {
+        if (count($values) === 0) {
+            return;
+        }
+
+        $blockCount = count($values) / count($columns);
+
+        $sql = 'insert into ' . $table;
+        $sql .= '(`' . implode('`,`', $columns) . '`) values';
+        $tplValue = '(' . implode(',', array_fill(0, count($columns), '?')) . ')';
+        for ($i = 0; $i < $blockCount; $i++) {
+            $sql .= $tplValue . ',';
+        }
+        // убираем лишнюю запятую в конце
+        $sql = substr($sql, 0, strlen($sql) - 1);
+        $comment = $this->getComment($function);
+        $sql .= $comment;
+
+        $this->prepExec($sql, $values);
+    }
+
+    public function convert2Dto1D(array $columns, array $values): array
+    {
+        $values1D = [];
+        foreach ($values as $item) {
+            $values1D = array_merge($values1D, $item);
+        }
+
+        if (count($values1D) % count($columns) !== 0) {
+            throw new DbException(
+                'wrong value size for insert',
+                'wrong values size: values1D=' . count($values1D) . ' column=' . count($columns)
+            );
+        }
+
+        return $values1D;
+    }
+
+    public function convert1Dto2D(array $columns, array $values): array
+    {
+        if (count($values) % count($columns) !== 0) {
+            throw new DbException(
+                'wrong value size for insert',
+                'wrong values size: values=' . count($values) . ' column=' . count($columns)
+            );
+        }
+
+        return array_chunk($values, count($columns));
+    }
+
+    public function insert2DMultiBind(
+        string $table,
+        array $columns = [],
+        array $values = [],
+        string $function = ''
     ): array {
         if (count($values) === 0) {
             return [];
         }
 
-        if (count($values) % count($columns) !== 0) {
-            throw new DbException(
-                'wrong value size for insert',
-                'wrong values size: val=' . count($values) . ' column=' . count($columns)
-            );
-        }
-
-        $valueChunks = array_chunk($values, count($columns));
-        $sqlValues = [];
-        $types = '';
-        foreach ($valueChunks as $valueChunk) {
-            $sqlValues[] = implode(',', array_fill(0, count($valueChunk), '?'));
-            $types .= $this->buildMysqliParamTypes($valueChunk);
-        }
-
-        $sqlValues = '(' . implode('),(', $sqlValues) . ')';
-        $columns = is_string($columns) ? $columns : ('`' . implode('`,`', $columns) . '`');
-        $comment = $this->getComment($function);
-        $sql = "insert into $table ($columns) values $sqlValues $comment";
-        $insertId = -1;
-
-        $stmt = $this->query(function (\mysqli $mysqli) use ($sql, $types, $values, &$insertId) {
-            $stmt = $this->prepare($sql, $mysqli);
-            $this->bind($stmt, $sql, $mysqli, $types, $values);
-            $this->execute($stmt, $sql, $mysqli);
-
-            $insertId = $mysqli->insert_id;
-
-            return $stmt;
-        }, $sql);
-        $stmt->free_result();
-
-        return $insertId;
-    }
-
-    public function insert2D(
-        string $table,
-        array|string $columns = [],
-        array $values = [],
-        string $function = ''
-    ): array {
-        if (count($values) === 0) {
-            throw new DbEmptyDataException('empty data for insert', 'empty data for insert 2d');
-        }
+        $mysqli = $this->getMysqlRaw();
+        $mysqli->autocommit(false);
+        $mysqli->begin_transaction();
 
         $types = $this->buildMysqliParamTypes($values[0]);
         $sqlValue = implode(',', array_fill(0, count($values[0]), '?'));
 
-        $columns = is_string($columns) ? $columns : ('`' . implode('`,`', $columns) . '`');
+        $columns = '`' . implode('`,`', $columns) . '`';
         $comment = $this->getComment($function);
         $sql = "insert into $table ($columns) values ($sqlValue) $comment";
 
@@ -469,11 +468,7 @@ class Connection
 
         $this->query(function (\mysqli $mysqli) use ($sql, $types, $values, &$insertIds) {
             $stmt = $this->prepare($sql, $mysqli);
-            $params = [];
-            foreach ($values[0] as &$v) {
-                $params[] = $v;
-            }
-
+            $params = array_fill(0, count($values[0]), null);
             $this->bind($stmt, $sql, $mysqli, $types, $params);
 
             foreach ($values as $value) {
@@ -487,21 +482,10 @@ class Connection
             return $stmt;
         }, $sql);
 
-        return $insertIds;
-    }
-
-    public function insert2DTransaction(
-        string $table,
-        array $columns = [],
-        array $values = [],
-        string $function = ''
-    ) {
-        $mysqli = $this->getMysqlRaw();
-        $mysqli->autocommit(false);
-        $mysqli->begin_transaction();
-        $this->insert2D($table, $columns, $values, $function);
         $mysqli->commit();
         $mysqli->autocommit(true);
+
+        return $insertIds;
     }
 
     /**
@@ -545,16 +529,16 @@ class Connection
         }
     }
 
-//    public function cleanup(\mysqli $mysqli): void
-//    {
-//        $mysqli->stmt_init();
-//        do {
-//            $result = $mysqli->store_result();
-//            if ($result) {
-//                $result->free();
-//            }
-//        } while ($mysqli->more_results() && $mysqli->next_result());
-//    }
+    public function cleanup(\mysqli $mysqli): void
+    {
+        $mysqli->stmt_init();
+        do {
+            $result = $mysqli->store_result();
+            if ($result) {
+                $result->free_result();
+            }
+        } while ($mysqli->more_results() && $mysqli->next_result());
+    }
 
     public function query(callable $cb, string $sql): mixed
     {
@@ -603,7 +587,7 @@ class Connection
         return $stmt;
     }
 
-    private function getComment(string $function): string
+    public function getComment(string $function): string
     {
         $requestId = $this->requestId ?? '';
         if (empty($function) && empty($requestId)) {
@@ -611,10 +595,10 @@ class Connection
         }
 
         $comment = ' #';
-        if (empty($function)) {
+        if (!empty($function)) {
             $comment .= ' ' . $function;
         }
-        if (empty($requestId)) {
+        if (!empty($requestId)) {
             $comment .= ' ' . $requestId;
         }
 
@@ -632,7 +616,8 @@ class Connection
     ): Fetch|null {
         $mysqli = $this->getMysqlRaw();
 
-        $stmt = $this->query(function () use ($sql, $params, $mode, $function, $mysqli) {
+        /** @var \mysqli_result|\mysqli_stmt $handle */
+        $handle = $this->query(function () use ($sql, $params, $mode, $function, $mysqli) {
             if (empty($params)) {
                 return $mysqli->query($sql, $mode);
             }
@@ -644,7 +629,6 @@ class Connection
             }, $sql);
 
             $sql .= $this->getComment($function);
-            echo $sql, PHP_EOL;
 
             $types = '';
             $binds = [];
@@ -662,21 +646,21 @@ class Connection
         }, $sql);
 
 
-        if ($stmt instanceof \mysqli_result) {
-            return new Fetch($stmt, $mysqli);
+        if ($handle instanceof \mysqli_result) {
+            return new Fetch($handle, $mysqli->affected_rows);
         }
 
-        if (is_bool($stmt)) {
+        if (is_bool($handle)) {
             return null;
         }
 
-        $result = $stmt->get_result();
+        $result = $handle->get_result();
         if (is_bool($result)) {
-            $stmt->free_result();
+            $handle->free_result();
             return null;
         }
 
-        return new Fetch($result, $mysqli);
+        return new Fetch($result, $handle->affected_rows);
     }
 
     public function escapeString(string $data): string

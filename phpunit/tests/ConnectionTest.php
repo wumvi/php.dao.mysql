@@ -1,7 +1,7 @@
 <?php
 
 use PHPUnit\Framework\TestCase;
-use Wumvi\Dao\Mysql\Exception\DeadlockException;
+use \Wumvi\Dao\Mysql\Utils;
 use Wumvi\Dao\Mysql\Exception\DbReconnectException;
 use Wumvi\Dao\Mysql\Exception\DbException;
 use Wumvi\Dao\Mysql\Exception\DuplicateRowDbException;
@@ -41,7 +41,15 @@ class ConnectionTest extends TestCase
         $this->assertNotEquals($conn->threadId, Consts::THREAD_ID, 'thread is exists');
         $this->assertTrue($conn->isConnected(), 'is connected');
 
-        // $this->assertEquals(ty);
+        $conn->close();
+    }
+
+    public function testConstructorWrong(): void
+    {
+        $this->expectExceptionMessage('db connect wrong. Check url http:///');
+        $conn = new Connection(['r1' => 'http:///'], 'req-id');
+        $conn->call('select 1');
+        $conn->close();
     }
 
     public function testMasterSlaveExec(): void
@@ -50,91 +58,19 @@ class ConnectionTest extends TestCase
             'r1' => self::REPLICA1_URL,
             'r2' => self::REPLICA2_URL
         ], 'req-id');
-        $data = $conn->call('select CURRENT_USER() as user', [], 'run')->fetchOne();
-        $this->assertEquals($data['user'], 'root@127.0.0.1');
+        $data = $conn->call('select @@hostname as hostname')->fetchOne();
+
+        $isReplica = in_array($data['hostname'], ['php.dao.mysql-replica2', 'php.dao.mysql-replica1']);
+        $this->assertTrue($isReplica);
     }
 
-//    public function testMasterConstructor(): void
-//    {
-//        $this->expectNotToPerformAssertions();
-//        $baseDao = new Connection(['master' => self::MASTER_URL]);
-//        $baseDao->close();
-//    }
-//
-//    public function testMultiSlave(): void
-//    {
-//        $baseDao = new Connection([
-//        ], [
-//            'slave1' => self::REPLICA1_URL,
-//            'slave2' => self::REPLICA1_URL,
-//        ]);
-//        $data = $baseDao->call('select CURRENT_USER() as user', [], true, 'run')->fetchOne();
-//        $this->assertEquals($data['user'], 'replica1@%');
-//        $data = $baseDao->call('select CURRENT_USER() as user', [], true, 'run')->fetchOne();
-//        $this->assertEquals($data['user'], 'replica1@%');
-//        $baseDao->close();
-//    }
-//
     public function testConnectionNotFound(): void
     {
         $this->expectExceptionMessage(Consts::CONNECTION_IS_EMPTY_MSG);
-        $conn = new Connection([
-        ], 'req-id');
+        $conn = new Connection([], 'req-id');
         $conn->call('select CURRENT_USER() as user', [], 'run')->fetchOne();
         $conn->close();
     }
-
-
-    public function testInsert(): void
-    {
-        $conn = new Connection([
-            'm1' => self::MASTER_URL
-        ], 'req-id');
-        $table = 'table_for_insert';
-        $conn->call('truncate table ' . $table);
-//        $baseDao->insert('table_for_insert', [
-//            'id1' => [1, 2],
-//            'id2' => ['ff', 'ddd']
-//        ]);
-        $result = $conn->call('insert into ' . $table . '(id1, id2) values(:p_id1, :p_id2)', [
-            'p_id1' => [1, 'i'],
-            'p_id2' => 'key1',
-        ]);
-        $this->assertNull($result, 'insert result null');
-
-        $data = $conn->call('select * from ' . $table)->fetchOne();
-
-        $this->assertIsArray($data, 'is array');
-        $this->assertArrayHasKey('id1', $data);
-        $this->assertArrayHasKey('id2', $data);
-        $this->assertTrue($data['id1'] === '1' && $data['id2'] === 'key1');
-    }
-
-//    public function testInsertException(): void
-//    {
-//        $this->expectException(DbException::class);
-//        $baseDao = new Connection(['master' => self::MASTER_URL]);
-//        $baseDao->insert('table_for_not_found', [
-//            'id1' => [1, 2],
-//            'id2' => ['ff', 'ddd']
-//        ]);
-//        // todo check data
-//        $baseDao->close();
-//    }
-//
-//    public function testDeadLockSuccess()
-//    {
-//        $conn1 = new Connection(['m1' => self::MASTER_URL], 'req-id');
-//        $conn2 = new Connection(['m1' => self::MASTER_URL], 'req-id');
-//        $conn1->call('call init_dead_lock_table(1, 2)');
-//        $conn1->call('call test_dead_lock(1, 2)', [], '', MYSQLI_ASYNC);
-//        $conn2->call('call test_dead_lock(2, 1)');
-//        $data = $conn2->call('select * from test_deadlock_table where id in (1,2)')->fetchAll();
-//        $this->assertEqualsCanonicalizing($data, [['id' => '1', 'value' => '2'], ['id' => '2', 'value' => '2']]);
-//
-//        $conn1->close();
-//        $conn2->close();
-//    }
 
     public function testConnectionSslParam()
     {
@@ -148,54 +84,29 @@ class ConnectionTest extends TestCase
         );
         $conn->close();
     }
-//
-//    public function testConnectionAutoCommitParam()
-//    {
-//        $baseDao = new Connection(['master' => self::MASTER_URL . '?autocommit=1']);
-//        $data = $baseDao->call('SHOW VARIABLES WHERE Variable_name="autocommit"')->fetchOne();
-//        $this->assertEqualsCanonicalizing($data, ['Variable_name' => 'autocommit', 'Value' => 'ON'], 'autocommit on');
-//        $baseDao->close();
-//        $baseDao = new Connection(['master' => self::MASTER_URL . '?autocommit=0']);
-//        $data = $baseDao->call('SHOW VARIABLES WHERE Variable_name="autocommit"')->fetchOne();
-//        $this->assertEqualsCanonicalizing(
-//            $data,
-//            ['Variable_name' => 'autocommit', 'Value' => 'OFF'],
-//            'autocommit off'
-//        );
-//        $baseDao->close();
-//        $baseDao = new Connection(['master' => self::MASTER_URL]);
-//        $data = $baseDao->call('SHOW VARIABLES WHERE Variable_name="autocommit"')->fetchOne();
-//        $this->assertEqualsCanonicalizing(
-//            $data,
-//            ['Variable_name' => 'autocommit', 'Value' => 'OFF'],
-//            'autocommit default'
-//        );
-//        $baseDao->close();
-//    }
-//
-    public function testReconnectException()
+
+    public function testReconnect()
     {
-        $this->expectException(DbReconnectException::class);
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $table = 'test_deadlock_table';
+        $mysqli = $conn->getMysqlRaw();
+        $sql = <<<SQL
+            DROP TABLE IF EXISTS $table;
+            create table $table
+            (
+                id  int not null primary key,
+                val int null
+            );
+            insert into test_deadlock_table (id, val)
+            values (1, 0),(2, 0),(3, 0),(4, 0);        
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
 
         $conn1 = new Connection(['m1' => self::MASTER_URL]);
         $conn2 = new Connection(['m2' => self::MASTER_URL]);
 
-        $conn1->autocommit(false);
-        $conn1->beginTransaction();
-        $conn1->call('update test_deadlock_table set val = val + 1 where id = 4');
-
-        $conn2->call('kill ' . $conn1->threadId);
-        $conn2->close();
-
-        $conn1->call('update test_deadlock_table set val = val + 2 where id = 4');
-    }
-
-    public function testReconnect()
-    {
-        $conn1 = new Connection(['m1' => self::MASTER_URL]);
-
         try {
-            $conn2 = new Connection(['m2' => self::MASTER_URL]);
             $conn1->autocommit(false);
             $conn1->beginTransaction();
             $conn1->call('update test_deadlock_table set val = val + 1 where id = 4');
@@ -211,8 +122,43 @@ class ConnectionTest extends TestCase
         }
     }
 
+    public function testAffectedRows()
+    {
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $fetch = $conn->call('select 1 union select 2');
+        $this->assertEquals($fetch->affectedRows, 2);
+
+        $fetch = $conn->call('select :p_val1 union select :p_val2', ['p_val1' => 1, 'p_val2' => 2]);
+        $this->assertEquals($fetch->affectedRows, 2);
+    }
+
+    public function testConvertDateToString()
+    {
+        $timestamp = 1678886400;
+        $datetime = new DateTime("@$timestamp");
+
+        $str = Utils::convertDateToString($datetime);
+        $this->assertEquals($str, '2023-03-15 13:20:00');
+    }
+
     public function testDeadLockException()
     {
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $table = 'test_deadlock_table';
+        $mysqli = $conn->getMysqlRaw();
+        $sql = <<<SQL
+            DROP TABLE IF EXISTS $table;
+            create table $table
+            (
+                id  int not null primary key,
+                val int null
+            );
+            insert into test_deadlock_table (id, val)
+            values (1, 0),(2, 0),(3, 0),(4, 0);        
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
+
         $conn1 = new Connection(['m1' => 'mysql://root:pwd@127.0.0.1:3432/test' . '?deadlock-try-count=-1']);
         $conn2 = new Connection(['m2' => 'mysql://root:pwd@127.0.0.1:3432/test' . '?deadlock-try-count=-1']);
 
@@ -263,7 +209,6 @@ class ConnectionTest extends TestCase
         $conn->close();
     }
 
-
     public function testEscapeString()
     {
         $conn = new Connection(['m1' => self::MASTER_URL]);
@@ -273,12 +218,38 @@ class ConnectionTest extends TestCase
     public function testFetch()
     {
         $conn = new Connection(['m1' => self::MASTER_URL]);
-        $fetch = $conn->call('update test_table set value = value + 1 where id = 1');
+        $table = 'table_for_fetch';
+        $mysqli = $conn->getMysqlRaw();
+        $sql = <<<SQL
+            DROP TABLE IF EXISTS $table;
+            create table $table (id int null, value varchar(30));
+            insert into $table (id, value) values(1, 'data1');
+            insert into $table (id, value) values(2, 'data2');
+            insert into $table (id, value) values(3, 'data3');
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
+
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $fetch = $conn->call('update table_for_fetch set value = "update1" where id = 1');
         $this->assertNull($fetch, 'empty data for update');
 
         $fetch = $conn->call('select 1 as id');
         $this->assertTrue($fetch->result instanceof \mysqli_result);
         $conn->close();
+
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $fetch = $conn->call('select 1 as id');
+        $this->assertEquals($fetch->fetchOne(), ['id' => 1]);
+        $this->assertEquals($fetch->fetchOne(), []);
+
+        $fetch = $conn->call('select 1 as id');
+        $this->assertEquals($fetch->fetchAll(), [['id' => 1]]);
+        $this->assertEquals($fetch->fetchAll(), []);
+
+        $fetch = $conn->call('select 1 as id');
+        $fetch->free();
+        $fetch->free();
     }
 
     public function testParam()
@@ -292,7 +263,7 @@ class ConnectionTest extends TestCase
         $baseDao->close();
     }
 
-    public function testWrongParamException()
+    public function testProcNotFound()
     {
         $this->expectException(DbException::class);
         $conn = new Connection(['m1' => self::MASTER_URL]);
@@ -300,67 +271,27 @@ class ConnectionTest extends TestCase
         $conn->close();
     }
 
-//
     public function testDuplicateException()
     {
         $this->expectException(DuplicateRowDbException::class);
         $conn = new Connection(['master' => self::MASTER_URL]);
+        $table = 'test_for_duplicate';
+        $mysqli = $conn->getMysqlRaw();
+        $sql = <<<SQL
+            DROP TABLE IF EXISTS $table;
+            create table $table
+            (
+                id int not null primary key
+            );
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
+
         $conn->beginTransaction();
-        $conn->call('delete from test_duplicate where id = 1');
-        $conn->call('insert into test_duplicate(id) values (1)');
-        $conn->call('insert into test_duplicate(id) values (1)');
+        $conn->call('insert into test_for_duplicate(id) values (1)');
+        $conn->call('insert into test_for_duplicate(id) values (1)');
         $conn->commit();
         $conn->close();
-    }
-
-//    public function testWrongMethodException()
-//    {
-//        $this->expectException(DuplicateRowDbException::class);
-//        $connect = new Connection(['master' => self::MASTER_URL]);
-//
-//        $connect->call('delete from test_duplicate where id = 2');
-//        $connect->beginTransaction();
-//        $connect->insert('test_duplicate', ['id' => [2]]);
-//        $connect->insert('test_duplicate', ['id' => [2]]);
-//        $connect->commit();
-//    }
-//
-//    public function testInsertParam()
-//    {
-//        $baseDao = new Connection(['master' => self::MASTER_URL]);
-//
-//        $baseDao->call('delete from test_insert_param');
-//        $baseDao->insert('test_insert_param', [
-//            'num' => [2],
-//            'str' => ['test'],
-//            'json' => [[1, 2, 3]],
-//            'for_null' => [null],
-//            'bool' => [true],
-//            'date' => [new DateTime('2012-11-10 09:08:07')]
-//        ]);
-//        $baseDao->commit();
-//        $data = $baseDao->call('select * from test_insert_param limit 1')->fetchOne();
-//        $this->assertEqualsCanonicalizing($data, [
-//            'num' => '2',
-//            'str' => 'test',
-//            'json' => '[1, 2, 3]',
-//            'for_null' => null,
-//            'bool' => '1',
-//            'date' => '2012-11-10 09:08:07',
-//        ]);
-//    }
-//
-//    public function testCleanup()
-//    {
-//        $conn = new Connection(['m' => self::MASTER_URL]);
-//        $conn->call('select 1');
-//        $conn->call('select 1');
-//    }
-
-    public function testSelect()
-    {
-        $conn = new Connection(['m1' => self::MASTER_URL]);
-        $conn->select(true, 'test_table', []);
     }
 
     public function testWrongConnection()
@@ -370,14 +301,227 @@ class ConnectionTest extends TestCase
         $conn->getMysqlRaw();
     }
 
+    public function testWrongPrepare()
+    {
+        $errorMsg = <<<TEXT
+            Error execute sql "bad-data". Msg "You have an error in your SQL syntax; check the manual that corresponds to your MySQL server version for the right syntax to use near 'bad-data' at line 1"
+        TEXT;
+        $errorMsg = trim($errorMsg);
+
+        $this->expectExceptionMessage($errorMsg);
+        $conn = new Connection(['m' => self::MASTER_URL]);
+        $conn->call('bad-data', ['p' => 1]);
+    }
+
+    public function testGetComments()
+    {
+        $conn = new Connection(['m' => self::MASTER_URL], 'test-request-id');
+        $comments = $conn->getComment('test-comment');
+        $this->assertEquals($comments, ' # test-comment test-request-id');
+
+        $conn = new Connection(['m' => self::MASTER_URL], '');
+        $comments = $conn->getComment('');
+        $this->assertEquals($comments, '');
+    }
+
+    public function testPhpTypeToMysqli()
+    {
+        $conn = new Connection(['m' => self::MASTER_URL]);
+        $type = $conn->phpTypeToMysqli(1);
+        $this->assertEquals($type, 'i');
+
+        $type = $conn->phpTypeToMysqli(1.2);
+        $this->assertEquals($type, 'd');
+
+        $type = $conn->phpTypeToMysqli(true);
+        $this->assertEquals($type, 'i');
+
+        $type = $conn->phpTypeToMysqli(null);
+        $this->assertEquals($type, 's');
+
+        $type = $conn->phpTypeToMysqli(new \stdClass());
+        $this->assertEquals($type, 's');
+    }
+
+    public function testConvertArray()
+    {
+        $conn = new Connection(['m' => self::MASTER_URL]);
+
+        $array = $conn->convert2Dto1D(['id', 'val'], [[1, 2], [3, 4]]);
+        $this->assertEquals($array, [1, 2, 3, 4]);
+
+        $array = $conn->convert1Dto2D(['id', 'val'], [1, 2, 3, 4]);
+        $this->assertEquals($array, [[1, 2], [3, 4]]);
+
+        try {
+            $conn->convert2Dto1D(['id', 'val', 'col'], [[1, 2], [3, 4]]);
+            $this->fail('exception not cached');
+        } catch (DbException $ex) {
+            $this->assertEquals($ex->publicMsg, 'wrong value size for insert');
+        }
+
+        try {
+            $conn->convert1Dto2D(['id', 'val', 'col'], [1, 2, 3, 4]);
+            $this->fail('exception not cached');
+        } catch (DbException $ex) {
+            $this->assertEquals($ex->publicMsg, 'wrong value size for insert');
+        }
+    }
+
+    public function testCommitBad()
+    {
+        $this->expectException(DbException::class);
+        $conn = new Connection(['m' => self::MASTER_URL]);
+        $conn->beginTransaction();
+        $conn->call('select 1');
+        $conn->commit(3333);
+        $this->assertTrue(true);
+    }
+
+    public function testRollbackBad()
+    {
+        $this->expectException(DbException::class);
+        $conn = new Connection(['m' => self::MASTER_URL]);
+        $conn->beginTransaction();
+        $conn->call('select 1');
+        $conn->rollback(3333);
+        $this->assertTrue(true);
+    }
+
     public function testCustomTextException()
     {
         $conn = new Connection(['m1' => self::MASTER_URL]);
+        $mysqli = $conn->getMysqlRaw();
+        $sql = <<<SQL
+            drop procedure if exists test_exception;
+            create procedure test_exception()
+            begin
+                SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'custom-error';
+            end;
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
+
         try {
             $conn->call('call test_exception()');
         } catch (DbException $ex) {
             $this->assertEquals($ex->getMessage(), 'Error execute sql "call test_exception()". Msg "custom-error"');
             $this->assertEquals($ex->publicMsg, 'db error');
         }
+    }
+
+    public function testUpdate()
+    {
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $table = 'table_for_update';
+        $mysqli = $conn->getMysqlRaw();
+        $sql = <<<SQL
+            DROP TABLE IF EXISTS $table;
+            create table $table (id int null, value varchar(30));
+            insert into $table (id, value) values(1, 'data1');
+            insert into $table (id, value) values(2, 'data2');
+            insert into $table (id, value) values(3, 'data3');
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
+
+        $affectedRows = $conn->update($table, ['value' => 'test1'], ['id' => 1]);
+        $data = $mysqli->query("select * from $table")->fetch_all();
+        $this->assertEquals($data, [[1, 'test1'], [2, 'data2'], [3, 'data3']]);
+        $this->assertEquals($affectedRows, 1);
+
+        $affectedRows = $conn->update($table, ['value' => 'all']);
+        $data = $mysqli->query("select * from $table")->fetch_all();
+        $this->assertEquals($data, [[1, 'all'], [2, 'all'], [3, 'all']]);
+        $this->assertEquals($affectedRows, 3);
+
+    }
+
+    public function testDelete()
+    {
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $table = 'table_for_delete';
+        $mysqli = $conn->getMysqlRaw();
+        $sql = <<<SQL
+            DROP TABLE IF EXISTS $table;
+            create table $table (id int null, value varchar(30));
+            insert into $table (id, value) values(1, 'data1');
+            insert into $table (id, value) values(2, 'data2');
+            insert into $table (id, value) values(3, 'data3');
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
+
+        $affectedRows = $conn->delete($table, ['id' => 1]);
+        $data = $mysqli->query("select * from $table where id between 2 and 3")->fetch_all();
+        $this->assertEquals($data, [[2, 'data2'], [3, 'data3']]);
+        $this->assertEquals($affectedRows, 1);
+
+        $affectedRows = $conn->delete($table, []);
+        $data = $mysqli->query("select * from $table")->fetch_all();
+        $this->assertEquals($data, []);
+        $this->assertEquals($affectedRows, 2);
+    }
+
+    public function testInsert()
+    {
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $table = 'table_for_insert';
+        $mysqli = $conn->getMysqlRaw();
+
+        $sql = <<<SQL
+            DROP TABLE IF EXISTS $table;
+            create table $table (id int null, value varchar(30));
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
+
+        $conn->insertSingle($table, ['id' => 1, 'value' => 'data1']);
+        $data = $conn->select(true, $table, 'value', ['id' => 1]);
+        $this->assertEquals($data, ['value' => 'data1']);
+
+        $insertId = $conn->insertSingle($table, []);
+        $this->assertEquals($insertId, -1);
+
+        $conn->insert1DBigBind($table, ['id', 'value'], [2, 'data2', 3, 'data3']);
+        $data = $mysqli->query("select * from $table where id between 2 and 3")->fetch_all();
+        $this->assertEquals($data, [[2, 'data2'], [3, 'data3']]);
+
+        $conn->insert1DBigBind($table, ['id', 'value'], []);
+
+        $conn->insert2DMultiBind($table, ['id', 'value'], [[4, 'data4'], [5, 'data5']]);
+        $data = $mysqli->query("select * from $table where id between 4 and 5")->fetch_all();
+        $this->assertEquals($data, [[4, 'data4'], [5, 'data5']]);
+
+        $conn->insert2DMultiBind($table, ['id', 'value'], []);
+    }
+
+    public function testSelect()
+    {
+        $conn = new Connection(['m1' => self::MASTER_URL]);
+        $table = 'table_for_select';
+        $mysqli = $conn->getMysqlRaw();
+
+        $sql = <<<SQL
+            DROP TABLE IF EXISTS $table;
+            create table $table (id int null, value varchar(30));
+            insert into $table (id, value) values(1, 'data1');
+            insert into $table (id, value) values(2, 'data2');
+            insert into $table (id, value) values(3, 'data3');
+        SQL;
+        $mysqli->multi_query($sql);
+        $conn->cleanup($mysqli);
+
+        $data = $conn->select(true, $table, 'value', ['id' => 1]);
+        $this->assertEquals($data, ['value' => 'data1']);
+
+        $data = $conn->select(true, $table, 'value');
+        $this->assertEquals($data, ['value' => 'data1']);
+
+        $data = $conn->select(false, $table, 'value');
+        $this->assertEquals($data, [['value' => 'data1'], ['value' => 'data2'], ['value' => 'data3']]);
+
+        $data = $conn->select(false, $table, [], ['id' => 4]);
+        $this->assertEquals($data, []);
     }
 }

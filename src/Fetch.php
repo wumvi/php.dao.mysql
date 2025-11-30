@@ -10,14 +10,19 @@ class Fetch
             return $this->result;
         }
     }
-    private \mysqli $mysql;
 
     private bool $isClose = false;
 
-    public function __construct(\mysqli_result $result, \mysqli $mysql)
+    public int $affectedRows {
+        get {
+            return $this->affectedRows;
+        }
+    }
+
+    public function __construct(\mysqli_result $result, int $affectedRows)
     {
         $this->result = $result;
-        $this->mysql = $mysql;
+        $this->affectedRows = $affectedRows;
     }
 
     public function __destruct()
@@ -25,11 +30,6 @@ class Fetch
         if (!$this->isClose) {
             $this->result->free_result();
         }
-    }
-
-    public function getAffectedRows(): int
-    {
-        return $this->mysql->affected_rows;
     }
 
     public function free(): void

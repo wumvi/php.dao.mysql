@@ -18,6 +18,12 @@ $mysqli = $conn1->getMysqlRaw();
 //$conn->call('select 1');
 //$conn->call('select 1');
 
+
+//$arr = [];
+//$arr = array_merge($arr, [1,2,3]);
+//$arr = array_merge($arr, [1,2,3]);
+//var_dump($arr);
+
 // $mysqli->multi_query("SELECT 1 union select 2; SELECT 2;");
 
 
@@ -28,14 +34,17 @@ $mysqli = $conn1->getMysqlRaw();
 //$mysqli->query("SELECT 2");
 
 //var_dump($mysqli->query('select @@autocommit as autocommit')->fetch_assoc());
-
-// $conn1->insertSingle('data', ['value'], [1]);
-// $conn1->insert2D('data', ['value'], [[9], [3]]);
-// $conn1->insert2DTransaction('data', ['value'], [[9], [3]]);
-// $conn1->insert1D('table_for_insert', ['id1', 'id2'], [1, 2, 3, 4]);
-
- $conn1->insert1D('data', ['value'], [1, 2, 3]);
+//
+// $conn1->insertSingle('data', ['value'=>1]);
+// $conn1->insert1DBigBind('data', ['value'], [9, 3]);
+// $conn1->insert2DMultiBind('data', ['value'], [[44], [33]]);
 
 //$conn1->select('test_table', ['value'], ['id' => 1]);
 //$conn1->delete('test_table', ['id' => 1]);
 //$conn1->update('test_table', ['value' => 2], ['id' => 1]);
+
+$conn = new Connection([
+    'r1' => 'mysql://root:pwd@127.0.0.1:3433/test',
+    'r2' => 'mysql://root:pwd@127.0.0.1:3434/test'
+], 'req-id');
+

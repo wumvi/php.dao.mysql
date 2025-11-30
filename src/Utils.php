@@ -5,29 +5,9 @@ namespace Wumvi\Dao\Mysql;
 
 class Utils
 {
-    public static function convert($value, \mysqli $mysql): string
+    public static function convertDateToString(\DateTime $data)
     {
-        if (is_null($value)) {
-            return 'null';
-        }
-
-        if (is_string($value)) {
-            return '\'' . $mysql->escape_string($value) . '\'';
-        }
-
-        if (is_bool($value)) {
-            return $value ? '1' : '0';
-        }
-
-        if ($value instanceof \DateTime) {
-            return '\'' . $value->format('Y-m-d H:i:s') . '\'';
-        }
-
-        if (is_array($value)) {
-            return '\'' . json_encode($value) . '\'';
-        }
-
-        return $value . '';
+        return $data->format('Y-m-d H:i:s');
     }
 }
 
